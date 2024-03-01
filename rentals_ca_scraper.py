@@ -163,6 +163,8 @@ def main():
         print("\nFailed URLs:")
         for url in failed_urls:
             print(url)
+    else:
+        print("\nAll URLs fetched successfully!")
 
 
 if __name__ == "__main__":
