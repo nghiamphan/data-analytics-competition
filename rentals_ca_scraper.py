@@ -1,10 +1,13 @@
+import csv
 import requests
 import re
 import json
 import os
 import time
 
-HEADERS = {"User-Agent": "Mozilla/5.0"}
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+}
 MAX_ATTEMPTS = 5
 SLEEP_TIME = [1, 2, 3, 4, 5]
 
@@ -149,6 +152,84 @@ def fetch_main_page(main_page_url):
                 failed_urls.append(main_page_url)
 
 
+def write_data_to_csb(json_file, building_csv_file, unit_csv_file):
+    """
+    Write the data from the JSON file to two CSV files: buildings.csv and units.csv
+
+    Parameters
+    ----------
+    json_file : str
+        The path to the JSON file, which contains the building details.
+    building_csv_file : str
+        The path to the building CSV file, which contains information of the buildings.
+    unit_csv_file : str
+        The path to the unit CSV file, which contains information of the available units in the buildings.
+    """
+    with open(json_file, "r", encoding="utf-8") as file:
+        buildings = json.load(file)
+
+    with open(building_csv_file, "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+
+        header = [
+            "id",
+            "company",
+            "name",
+            "address",
+            "postal_code",
+            "city",
+            "property_type",
+            "pet_friendly",
+            "furnished",
+            "amenities",
+        ]
+        writer.writerow(header)
+
+        for building in buildings:
+            company = building.get("company")
+            if company:
+                company_name = company.get("name")
+            else:
+                company_name = None
+
+            row = [
+                building.get("id"),
+                company_name,
+                building.get("name"),
+                building.get("address1"),
+                building.get("postal_code"),
+                building.get("city_name"),
+                building.get("property_type"),
+                building.get("pet_friendly"),
+                building.get("furnished"),
+            ]
+
+            for amenity in building.get("amenities"):
+                row.append(amenity.get("name"))
+
+            writer.writerow(row)
+
+    with open(unit_csv_file, "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+
+        header = ["building_id", "unit_id", "name", "beds", "baths", "areas", "rent"]
+        writer.writerow(header)
+
+        for building in buildings:
+            for unit in building.get("units"):
+                row = [
+                    building.get("id"),
+                    unit.get("id"),
+                    unit.get("name"),
+                    unit.get("beds"),
+                    unit.get("baths"),
+                    unit.get("dimensions"),
+                    unit.get("rent"),
+                ]
+
+                writer.writerow(row)
+
+
 def main():
     URL_APARTMENTS_CONDOS = "https://rentals.ca/halifax/all-apartments-condos"
     URL_APARTMENTS = "https://rentals.ca/halifax/all-apartments"
@@ -165,6 +246,8 @@ def main():
             print(url)
     else:
         print("\nAll URLs fetched successfully!")
+
+    write_data_to_csb("./data/buildings.json", "./data/buildings.csv", "./data/units.csv")
 
 
 if __name__ == "__main__":
