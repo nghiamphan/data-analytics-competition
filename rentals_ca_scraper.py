@@ -5,6 +5,7 @@ import os
 import time
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
+MAX_ATTEMPTS = 5
 SLEEP_TIME = [1, 2, 3, 4, 5]
 
 failed_urls = []
@@ -24,10 +25,9 @@ def fetch_building_details(url) -> json:
     data : json
         A JSON object containing the building details.
     """
-    max_attempts = 5
     attempt = 0
 
-    while attempt < max_attempts:
+    while attempt < MAX_ATTEMPTS:
         time.sleep(SLEEP_TIME[attempt])
         response = requests.get(url, headers=HEADERS)
 
@@ -44,9 +44,9 @@ def fetch_building_details(url) -> json:
             break
         else:
             print(
-                f"Status code: {response.status_code} - Failed to fetch content from {url} - Attempt {attempt}/{max_attempts}"
+                f"Status code: {response.status_code} - Failed to fetch content from {url} - Attempt {attempt}/{MAX_ATTEMPTS}"
             )
-            if attempt == max_attempts:
+            if attempt == MAX_ATTEMPTS:
                 failed_urls.append(url)
 
 
@@ -94,10 +94,9 @@ def fetch_main_page(main_page_url):
     main_page_url : str
         The URL of the main page, eg.: "https://rentals.ca/halifax/all-apartments-condos"
     """
-    max_attempts = 5
     attempt = 0
 
-    while attempt < max_attempts:
+    while attempt < MAX_ATTEMPTS:
         time.sleep(SLEEP_TIME[attempt])
         response = requests.get(main_page_url, headers=HEADERS)
 
@@ -121,7 +120,7 @@ def fetch_main_page(main_page_url):
                 url = f"{main_page_url}?p={page}"
 
                 attempt_inner = 0
-                while attempt_inner < max_attempts:
+                while attempt_inner < MAX_ATTEMPTS:
                     time.sleep(SLEEP_TIME[attempt_inner])
                     response = requests.get(url, headers=HEADERS)
 
@@ -132,9 +131,9 @@ def fetch_main_page(main_page_url):
                         break
                     else:
                         print(
-                            f"Status code: {response.status_code} - Failed to fetch content from {url} - Attempt {attempt_inner}/{max_attempts}"
+                            f"Status code: {response.status_code} - Failed to fetch content from {url} - Attempt {attempt_inner}/{MAX_ATTEMPTS}"
                         )
-                        if attempt_inner == max_attempts:
+                        if attempt_inner == MAX_ATTEMPTS:
                             failed_urls.append(url)
 
             with open("./data/buildings.json", "w", encoding="utf-8") as file:
@@ -144,9 +143,9 @@ def fetch_main_page(main_page_url):
 
         else:
             print(
-                f"Status code: {response.status_code} - Failed to fetch content from {main_page_url} - Attempt {attempt}/{max_attempts}"
+                f"Status code: {response.status_code} - Failed to fetch content from {main_page_url} - Attempt {attempt}/{MAX_ATTEMPTS}"
             )
-            if attempt == max_attempts:
+            if attempt == MAX_ATTEMPTS:
                 failed_urls.append(main_page_url)
 
 
