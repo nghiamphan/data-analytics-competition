@@ -152,7 +152,7 @@ def fetch_main_page(main_page_url):
                 failed_urls.append(main_page_url)
 
 
-def write_data_to_csb(json_file, building_csv_file, unit_csv_file):
+def write_data_to_two_csv(json_file, building_csv_file, unit_csv_file):
     """
     Write the data from the JSON file to two CSV files: buildings.csv and units.csv
 
@@ -179,6 +179,8 @@ def write_data_to_csb(json_file, building_csv_file, unit_csv_file):
             "postal_code",
             "city",
             "property_type",
+            "url",
+            "view_on_map_url",
             "pet_friendly",
             "furnished",
             "amenities",
@@ -200,6 +202,8 @@ def write_data_to_csb(json_file, building_csv_file, unit_csv_file):
                 building.get("postal_code"),
                 building.get("city_name"),
                 building.get("property_type"),
+                building.get("url"),
+                building.get("view_on_map_url"),
                 building.get("pet_friendly"),
                 building.get("furnished"),
             ]
@@ -247,7 +251,7 @@ def main():
     else:
         print("\nAll URLs fetched successfully!")
 
-    write_data_to_csb("./data/buildings.json", "./data/buildings.csv", "./data/units.csv")
+    write_data_to_two_csv("./data/buildings.json", "./data/buildings.csv", "./data/units.csv")
 
 
 if __name__ == "__main__":
