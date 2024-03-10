@@ -11,6 +11,10 @@ HEADERS = {
 MAX_ATTEMPTS = 5
 SLEEP_TIME = [1, 2, 3, 4, 5]
 
+URL_APARTMENTS_CONDOS = "https://rentals.ca/halifax/all-apartments-condos"
+URL_APARTMENTS = "https://rentals.ca/halifax/all-apartments"
+URL_CONDOS = "https://rentals.ca/halifax/all-condos"
+
 failed_urls = []
 
 
@@ -86,7 +90,7 @@ def extract_building_urls(text) -> list:
     return buildings
 
 
-def fetch_main_page(main_page_url):
+def fetch_main_page(main_page_url, json_file):
     """
     Fetch the main page and extract the number of pages.
     Then fetch building URLs from each page.
@@ -96,6 +100,8 @@ def fetch_main_page(main_page_url):
     ----------
     main_page_url : str
         The URL of the main page, eg.: "https://rentals.ca/halifax/all-apartments-condos"
+    json_file : str
+        The path to the JSON file, which contains the building details.
     """
     attempt = 0
 
@@ -139,7 +145,7 @@ def fetch_main_page(main_page_url):
                         if attempt_inner == MAX_ATTEMPTS:
                             failed_urls.append(url)
 
-            with open("./data/buildings.json", "w", encoding="utf-8") as file:
+            with open(json_file, "w", encoding="utf-8") as file:
                 file.write(json.dumps(buildings, indent=2))
 
             break
@@ -234,7 +240,7 @@ def write_data_to_two_csv(json_file, building_csv_file, unit_csv_file):
                 writer.writerow(row)
 
 
-def write_data_to_one_csv(json_file, unit_csv_file):
+def write_data_to_one_csv(json_file, unit_full_info_csv_file):
     """
     Write the data from the JSON file to one CSV file: units.csv
 
@@ -242,13 +248,13 @@ def write_data_to_one_csv(json_file, unit_csv_file):
     ----------
     json_file : str
         The path to the JSON file, which contains the building details.
-    unit_csv_file : str
+    unit_full_info_csv_file : str
         The path to the unit CSV file, each row contains the information of a unit and of the building the unit belongs to.
     """
     with open(json_file, "r", encoding="utf-8") as file:
         buildings = json.load(file)
 
-    with open(unit_csv_file, "w", newline="", encoding="utf-8") as file:
+    with open(unit_full_info_csv_file, "w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
 
         header = [
@@ -310,26 +316,51 @@ def write_data_to_one_csv(json_file, unit_csv_file):
                 writer.writerow(row)
 
 
-def main():
-    URL_APARTMENTS_CONDOS = "https://rentals.ca/halifax/all-apartments-condos"
-    URL_APARTMENTS = "https://rentals.ca/halifax/all-apartments"
-    URL_CONDOS = "https://rentals.ca/halifax/all-condos"
+def data_pipeline(
+    fetch_data: bool = False,
+    main_url: str = None,
+    json_file: str = None,
+    building_csv_file: str = None,
+    unit_csv_file: str = None,
+    unit_full_info_csv_file: str = None,
+):
+    """
+    If fetch_data is True and main_url is not None and json_file is not None,
+    call function fetch_main_page(main_url, json_file) that will write fetched data into the json file.
 
+    If json_file is not None and building_csv_file is not None and unit_csv_file is not None,
+    call function write_data_to_two_csv(json_file, building_csv_file, unit_csv_file) that will write data from the json file into two csv files.
+
+    If json_file is not None and unit_full_info_csv_file is not None,
+    call function write_data_to_one_csv(json_file, unit_full_info_csv_file) that will write data from the json file into one csv file.
+    """
     if not os.path.exists("data"):
         os.makedirs("data")
 
-    # fetch_main_page(URL_APARTMENTS_CONDOS)
+    if fetch_data and main_url and json_file:
+        fetch_main_page(main_url, json_file)
 
-    if failed_urls:
-        print("\nFailed URLs:")
-        for url in failed_urls:
-            print(url)
-    else:
-        print("\nAll URLs fetched successfully!")
+        if failed_urls:
+            print("\nFailed URLs:")
+            for url in failed_urls:
+                print(url)
+        else:
+            print("\nAll URLs fetched successfully!")
 
-    # write_data_to_two_csv("./data/buildings.json", "./data/buildings.csv", "./data/units.csv")
+    if json_file and building_csv_file and unit_csv_file:
+        write_data_to_two_csv(json_file, building_csv_file, unit_csv_file)
 
-    write_data_to_one_csv("./data/buildings.json", "./data/units_full_info.csv")
+    if json_file and unit_full_info_csv_file:
+        write_data_to_one_csv(json_file, unit_full_info_csv_file)
+
+
+def main():
+    data_pipeline(
+        fetch_data=False,
+        main_url=URL_APARTMENTS_CONDOS,
+        json_file="./data/buildings.json",
+        unit_full_info_csv_file="./data/units_full_info.csv",
+    )
 
 
 if __name__ == "__main__":
