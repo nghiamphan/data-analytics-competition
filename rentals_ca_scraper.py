@@ -234,6 +234,82 @@ def write_data_to_two_csv(json_file, building_csv_file, unit_csv_file):
                 writer.writerow(row)
 
 
+def write_data_to_one_csv(json_file, unit_csv_file):
+    """
+    Write the data from the JSON file to one CSV file: units.csv
+
+    Parameters
+    ----------
+    json_file : str
+        The path to the JSON file, which contains the building details.
+    unit_csv_file : str
+        The path to the unit CSV file, each row contains the information of a unit and of the building the unit belongs to.
+    """
+    with open(json_file, "r", encoding="utf-8") as file:
+        buildings = json.load(file)
+
+    with open(unit_csv_file, "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+
+        header = [
+            "building_id",
+            "unit_id",
+            "company",
+            "building_name",
+            "address",
+            "postal_code",
+            "city",
+            "property_type",
+            "url",
+            "view_on_map_url",
+            "pet_friendly",
+            "furnished",
+            # "amenities",
+            "unit_name",
+            "beds",
+            "baths",
+            "areas",
+            "rent",
+        ]
+        writer.writerow(header)
+
+        for building in buildings:
+            company = building.get("company")
+            if company:
+                company_name = company.get("name")
+            else:
+                company_name = None
+
+            for unit in building.get("units"):
+                row = [
+                    building.get("id"),
+                    unit.get("id"),
+                    company_name,
+                    building.get("name"),
+                    building.get("address1"),
+                    building.get("postal_code"),
+                    building.get("city_name"),
+                    building.get("property_type"),
+                    building.get("url"),
+                    building.get("view_on_map_url"),
+                    building.get("pet_friendly"),
+                    building.get("furnished"),
+                ]
+
+                # for amenity in building.get("amenities"):
+                #     row.append(amenity.get("name"))
+
+                row += [
+                    unit.get("name"),
+                    unit.get("beds"),
+                    unit.get("baths"),
+                    unit.get("dimensions"),
+                    unit.get("rent"),
+                ]
+
+                writer.writerow(row)
+
+
 def main():
     URL_APARTMENTS_CONDOS = "https://rentals.ca/halifax/all-apartments-condos"
     URL_APARTMENTS = "https://rentals.ca/halifax/all-apartments"
@@ -242,7 +318,7 @@ def main():
     if not os.path.exists("data"):
         os.makedirs("data")
 
-    fetch_main_page(URL_APARTMENTS_CONDOS)
+    # fetch_main_page(URL_APARTMENTS_CONDOS)
 
     if failed_urls:
         print("\nFailed URLs:")
@@ -251,7 +327,9 @@ def main():
     else:
         print("\nAll URLs fetched successfully!")
 
-    write_data_to_two_csv("./data/buildings.json", "./data/buildings.csv", "./data/units.csv")
+    # write_data_to_two_csv("./data/buildings.json", "./data/buildings.csv", "./data/units.csv")
+
+    write_data_to_one_csv("./data/buildings.json", "./data/units_full_info.csv")
 
 
 if __name__ == "__main__":
