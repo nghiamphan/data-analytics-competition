@@ -158,6 +158,32 @@ def fetch_main_page(main_page_url, json_file):
                 failed_urls.append(main_page_url)
 
 
+def get_amenities(json_file) -> list:
+    """
+    Get all amenities from the JSON file.
+
+    Parameters
+    ----------
+    json_file : str
+        The path to the JSON file, which contains the building details.
+
+    Returns
+    -------
+    amenities : list
+        A list of all distinct amenities of all buildings.
+    """
+    with open(json_file, "r", encoding="utf-8") as file:
+        buildings = json.load(file)
+
+    amenities = set()
+
+    for building in buildings:
+        for amenity in building.get("amenities"):
+            amenities.add(amenity.get("name"))
+
+    return list(amenities)
+
+
 def write_data_to_two_csv(json_file, building_csv_file, unit_csv_file):
     """
     Write the data from the JSON file to two CSV files: buildings.csv and units.csv
@@ -222,7 +248,7 @@ def write_data_to_two_csv(json_file, building_csv_file, unit_csv_file):
     with open(unit_csv_file, "w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
 
-        header = ["building_id", "unit_id", "name", "beds", "baths", "areas", "rent"]
+        header = ["building_id", "unit_id", "name", "beds", "baths", "area", "rent"]
         writer.writerow(header)
 
         for building in buildings:
@@ -270,13 +296,13 @@ def write_data_to_one_csv(json_file, unit_full_info_csv_file):
             "view_on_map_url",
             "pet_friendly",
             "furnished",
-            # "amenities",
-            "unit_name",
-            "beds",
-            "baths",
-            "areas",
-            "rent",
         ]
+
+        amenities = get_amenities(json_file)  # list of all possible amenities
+        header += amenities
+
+        header += ["unit_name", "beds", "baths", "area", "rent"]
+
         writer.writerow(header)
 
         for building in buildings:
@@ -302,8 +328,9 @@ def write_data_to_one_csv(json_file, unit_full_info_csv_file):
                     building.get("furnished"),
                 ]
 
-                # for amenity in building.get("amenities"):
-                #     row.append(amenity.get("name"))
+                # For each amenity, add True if the amenity is in the building's amenities, else add an empty string
+                for amenity in amenities:
+                    row.append(True if amenity in [a.get("name") for a in building.get("amenities")] else "")
 
                 row += [
                     unit.get("name"),
