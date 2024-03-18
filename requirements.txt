@@ -1,0 +1,4 @@
+requests==2.31.0
+pandas
+scikit-learn
+torch -f https://download.pytorch.org/whl/cu121
