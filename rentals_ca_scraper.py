@@ -184,88 +184,6 @@ def get_amenities(json_file) -> list:
     return list(amenities)
 
 
-def write_data_to_two_csv(json_file, building_csv_file, unit_csv_file):
-    """
-    Write the data from the JSON file to two CSV files: buildings.csv and units.csv
-
-    Parameters
-    ----------
-    json_file : str
-        The path to the JSON file, which contains the building details.
-    building_csv_file : str
-        The path to the building CSV file, which contains information of the buildings.
-    unit_csv_file : str
-        The path to the unit CSV file, which contains information of the available units in the buildings.
-    """
-    with open(json_file, "r", encoding="utf-8") as file:
-        buildings = json.load(file)
-
-    with open(building_csv_file, "w", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-
-        header = [
-            "id",
-            "company",
-            "name",
-            "address",
-            "postal_code",
-            "city",
-            "property_type",
-            "url",
-            "view_on_map_url",
-            "pet_friendly",
-            "furnished",
-            "amenities",
-        ]
-        writer.writerow(header)
-
-        for building in buildings:
-            company = building.get("company")
-            if company:
-                company_name = company.get("name")
-            else:
-                company_name = None
-
-            row = [
-                building.get("id"),
-                company_name,
-                building.get("name"),
-                building.get("address1"),
-                building.get("postal_code"),
-                building.get("city_name"),
-                building.get("property_type"),
-                building.get("url"),
-                building.get("view_on_map_url"),
-                building.get("pet_friendly"),
-                building.get("furnished"),
-            ]
-
-            for amenity in building.get("amenities"):
-                row.append(amenity.get("name"))
-
-            writer.writerow(row)
-
-    with open(unit_csv_file, "w", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-
-        header = ["building_id", "unit_id", "name", "beds", "baths", "area", "rent"]
-        writer.writerow(header)
-
-        for building in buildings:
-            for unit in building.get("units"):
-                row = [
-                    building.get("id"),
-                    unit.get("id"),
-                    unit.get("name"),
-                    unit.get("beds"),
-                    unit.get("baths"),
-                    unit.get("dimensions"),
-                    unit.get("rent"),
-                ]
-
-                writer.writerow(row)
-
-
 def write_data_to_one_csv(json_file, unit_full_info_csv_file):
     """
     Write the data from the JSON file to one CSV file: units.csv
@@ -347,16 +265,11 @@ def data_pipeline(
     fetch_data: bool = False,
     main_url: str = None,
     json_file: str = None,
-    building_csv_file: str = None,
-    unit_csv_file: str = None,
     unit_full_info_csv_file: str = None,
 ):
     """
     If fetch_data is True and main_url is not None and json_file is not None,
     call function fetch_main_page(main_url, json_file) that will write fetched data into the json file.
-
-    If json_file is not None and building_csv_file is not None and unit_csv_file is not None,
-    call function write_data_to_two_csv(json_file, building_csv_file, unit_csv_file) that will write data from the json file into two csv files.
 
     If json_file is not None and unit_full_info_csv_file is not None,
     call function write_data_to_one_csv(json_file, unit_full_info_csv_file) that will write data from the json file into one csv file.
@@ -373,9 +286,6 @@ def data_pipeline(
                 print(url)
         else:
             print("\nAll URLs fetched successfully!")
-
-    if json_file and building_csv_file and unit_csv_file:
-        write_data_to_two_csv(json_file, building_csv_file, unit_csv_file)
 
     if json_file and unit_full_info_csv_file:
         write_data_to_one_csv(json_file, unit_full_info_csv_file)
