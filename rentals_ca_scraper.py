@@ -8,9 +8,37 @@ import time
 MAX_ATTEMPTS = 5
 SLEEP_TIME = [0, 1, 2, 3, 4, 5]
 
-URL_APARTMENTS_CONDOS = "https://rentals.ca/halifax/all-apartments-condos"
-URL_APARTMENTS = "https://rentals.ca/halifax/all-apartments"
-URL_CONDOS = "https://rentals.ca/halifax/all-condos"
+URL_APARTMENTS_CONDOS_HALIFAX = "https://rentals.ca/halifax/all-apartments-condos"
+URL_APARTMENTS_HALIFAX = "https://rentals.ca/halifax/all-apartments"
+URL_CONDOS_HALIFAX = "https://rentals.ca/halifax/all-condos"
+
+URL_APARTMENTS_CONDOS_DARTMOUTH = "https://rentals.ca/dartmouth/all-apartments-condos"
+
+URL_APARTMENTS_CONDOS_SAINT_JOHN = "https://rentals.ca/saint-john/all-apartments-condos"  # Saint John, New Brunswick
+
+URL_APARTMENTS_CONDOS_FREDERICTON = "https://rentals.ca/fredericton/all-apartments-condos"  # Fredericton, New Brunswick
+
+URL_APARTMENTS_CONDOS_MONCTON = "https://rentals.ca/moncton/all-apartments-condos"  # Moncton, New Brunswick
+
+URL_APARTMENTS_CONDOS_CHARLOTTETOWN = "https://rentals.ca/charlottetown/all-apartments-condos"  # Charlottetown, PEI
+
+URL_APARTMENTS_CONDOS_ST_JOHN = "https://rentals.ca/st-johns/all-apartments-condos"  # St. John's, NL
+
+URL_APARTMENTS_CONDOS_WINNIPEG = "https://rentals.ca/winnipeg/all-apartments-condos"  # Winnipeg, Manitoba
+
+URL_APARTMENTS_CONDOS_REGINA = "https://rentals.ca/regina/all-apartments-condos"  # Regina, Saskatchewan
+
+URL_APARTMENTS_CONDOS_SASKATOON = "https://rentals.ca/saskatoon/all-apartments-condos"  # Saskatoon, Saskatchewan
+
+URL_APARTMENTS_CONDOS_EDMONTON = "https://rentals.ca/edmonton/all-apartments-condos"  # Edmonton, Alberta
+
+URL_APARTMENTS_CONDOS_CALGARY = "https://rentals.ca/calgary/all-apartments-condos"  # Calgary, Alberta
+
+URL_APARTMENTS_CONDOS_HAMILTON = "https://rentals.ca/hamilton/all-apartments-condos"  # Hamilton, Ontario
+
+URL_APARTMENTS_CONDOS_MISSISSAUGA = "https://rentals.ca/mississauga/all-apartments-condos"  # Mississauga, Ontario
+
+URL_APARTMENTS_CONDOS_TORONTO = "https://rentals.ca/toronto/all-apartments-condos"  # Toronto, Ontario
 
 failed_urls = []
 
@@ -90,18 +118,21 @@ def extract_building_urls(text) -> list:
     return buildings
 
 
-def fetch_main_page(main_page_url, json_file):
+def fetch_main_page(main_page_url) -> list:
     """
     Fetch the main page and extract the number of pages.
     Then fetch building URLs from each page.
-    Finally, aggregate the data from each building URL and save it to a JSON file.
+    Return the aggregate of data from each building URL.
 
     Parameters
     ----------
     main_page_url : str
         The URL of the main page, eg.: "https://rentals.ca/halifax/all-apartments-condos"
-    json_file : str
-        The path to the JSON file, which contains the building details.
+
+    Returns
+    -------
+    buildings : list
+        A list of building details.
     """
     attempt = 0
 
@@ -147,10 +178,7 @@ def fetch_main_page(main_page_url, json_file):
                         if attempt_inner == MAX_ATTEMPTS:
                             failed_urls.append(url)
 
-            with open(json_file, "w", encoding="utf-8") as file:
-                file.write(json.dumps(buildings, indent=2))
-
-            break
+            return buildings
 
         else:
             print(
@@ -158,6 +186,8 @@ def fetch_main_page(main_page_url, json_file):
             )
             if attempt == MAX_ATTEMPTS:
                 failed_urls.append(main_page_url)
+
+    return []
 
 
 def get_amenities(json_file) -> list:
@@ -265,7 +295,7 @@ def write_data_to_one_csv(json_file, unit_full_info_csv_file):
 
 def data_pipeline(
     fetch_data: bool = False,
-    main_url: str = None,
+    main_urls: list[str] = [],
     json_file: str = None,
     unit_full_info_csv_file: str = None,
 ):
@@ -279,8 +309,13 @@ def data_pipeline(
     if not os.path.exists("data"):
         os.makedirs("data")
 
-    if fetch_data and main_url and json_file:
-        fetch_main_page(main_url, json_file)
+    buildings = []
+    if fetch_data and len(main_urls) > 0 and json_file:
+        for main_url in main_urls:
+            buildings += fetch_main_page(main_url)
+
+        with open(json_file, "w", encoding="utf-8") as file:
+            file.write(json.dumps(buildings, indent=2))
 
         if failed_urls:
             print("\nFailed URLs:")
@@ -294,9 +329,26 @@ def data_pipeline(
 
 
 def main():
+    main_urls = [
+        URL_APARTMENTS_CONDOS_HALIFAX,
+        URL_APARTMENTS_CONDOS_DARTMOUTH,
+        URL_APARTMENTS_CONDOS_SAINT_JOHN,
+        URL_APARTMENTS_CONDOS_FREDERICTON,
+        URL_APARTMENTS_CONDOS_MONCTON,
+        URL_APARTMENTS_CONDOS_CHARLOTTETOWN,
+        URL_APARTMENTS_CONDOS_ST_JOHN,
+        URL_APARTMENTS_CONDOS_WINNIPEG,
+        URL_APARTMENTS_CONDOS_REGINA,
+        URL_APARTMENTS_CONDOS_SASKATOON,
+        URL_APARTMENTS_CONDOS_EDMONTON,
+        URL_APARTMENTS_CONDOS_CALGARY,
+        URL_APARTMENTS_CONDOS_HAMILTON,
+        URL_APARTMENTS_CONDOS_MISSISSAUGA,
+    ]
+
     data_pipeline(
         fetch_data=True,
-        main_url=URL_APARTMENTS_CONDOS,
+        main_urls=main_urls,
         json_file="./data/buildings.json",
         unit_full_info_csv_file="./data/units_full_info.csv",
     )
