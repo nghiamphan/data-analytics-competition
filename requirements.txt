@@ -1,4 +1,4 @@
-requests==2.31.0
+cloudscraper
 pandas
 scikit-learn
 torch -f https://download.pytorch.org/whl/cu121

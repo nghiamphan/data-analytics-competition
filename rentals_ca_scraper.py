@@ -1,21 +1,20 @@
+import cloudscraper
 import csv
-import requests
 import re
 import json
 import os
 import time
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-}
 MAX_ATTEMPTS = 5
-SLEEP_TIME = [1, 2, 3, 4, 5]
+SLEEP_TIME = [0, 1, 2, 3, 4, 5]
 
 URL_APARTMENTS_CONDOS = "https://rentals.ca/halifax/all-apartments-condos"
 URL_APARTMENTS = "https://rentals.ca/halifax/all-apartments"
 URL_CONDOS = "https://rentals.ca/halifax/all-condos"
 
 failed_urls = []
+
+scraper = cloudscraper.create_scraper()
 
 
 def fetch_building_details(url) -> json:
@@ -36,11 +35,12 @@ def fetch_building_details(url) -> json:
 
     while attempt < MAX_ATTEMPTS:
         time.sleep(SLEEP_TIME[attempt])
-        response = requests.get(url, headers=HEADERS)
+        response = scraper.get(url)
 
         attempt += 1
 
         if response.status_code == 200:
+            print(f"Fetching successfully: {url}", end="\r")
             # Match the content of the JSON object App.store.listing
             pattern = r"App.store.listing = (\{.*?\});"
             matches = re.findall(pattern, response.text, re.DOTALL)
@@ -107,11 +107,12 @@ def fetch_main_page(main_page_url, json_file):
 
     while attempt < MAX_ATTEMPTS:
         time.sleep(SLEEP_TIME[attempt])
-        response = requests.get(main_page_url, headers=HEADERS)
+        response = scraper.get(main_page_url)
 
         attempt += 1
 
         if response.status_code == 200:
+            print(f"Fetching successfully: {main_page_url}", end="\r")
             # find number of returned pages
             pattern = r'"last_page":(\d+),'
             matches = re.findall(pattern, response.text)
@@ -131,11 +132,12 @@ def fetch_main_page(main_page_url, json_file):
                 attempt_inner = 0
                 while attempt_inner < MAX_ATTEMPTS:
                     time.sleep(SLEEP_TIME[attempt_inner])
-                    response = requests.get(url, headers=HEADERS)
+                    response = scraper.get(url)
 
                     attempt_inner += 1
 
                     if response.status_code == 200:
+                        print(f"Fetching successfully: {url}", end="\r")
                         buildings += extract_building_urls(response.text)
                         break
                     else:
@@ -293,7 +295,7 @@ def data_pipeline(
 
 def main():
     data_pipeline(
-        fetch_data=False,
+        fetch_data=True,
         main_url=URL_APARTMENTS_CONDOS,
         json_file="./data/buildings.json",
         unit_full_info_csv_file="./data/units_full_info.csv",
