@@ -3,6 +3,7 @@ import csv
 import re
 import json
 import os
+import pandas as pd
 import time
 
 MAX_ATTEMPTS = 5
@@ -83,6 +84,8 @@ AMENITIES = [
 failed_urls = []
 
 scraper = cloudscraper.create_scraper()
+
+existing_unit_ids = set()
 
 
 def fetch_building_details(url: str) -> json:
@@ -256,6 +259,10 @@ def write_row_to_csv(writer: object, building_data: json):
         company_name = None
 
     for unit in building_data.get("units"):
+        # Skip if the unit already exists in the CSV file
+        if unit.get("id") in existing_unit_ids:
+            continue
+
         row = [
             building_data.get("id"),
             unit.get("id"),
@@ -303,11 +310,18 @@ def data_pipeline(
     csv_file : str
         The path to the output CSV file, which contains the unit details.
     """
+    global existing_unit_ids
+
     if not main_urls or not fetch_data or not csv_file:
         return
 
     if not os.path.exists("data"):
         os.makedirs("data")
+
+    if os.path.exists(csv_file):
+        df = pd.read_csv(csv_file)
+
+        existing_unit_ids = set(df["unit_id"])
 
     with open(csv_file, "a", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
