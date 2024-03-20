@@ -40,14 +40,54 @@ URL_APARTMENTS_CONDOS_MISSISSAUGA = "https://rentals.ca/mississauga/all-apartmen
 
 URL_APARTMENTS_CONDOS_TORONTO = "https://rentals.ca/toronto/all-apartments-condos"  # Toronto, Ontario
 
+ATTRIBUTES = [
+    "building_id",
+    "unit_id",
+    "company",
+    "building_name",
+    "address",
+    "postal_code",
+    "city",
+    "property_type",
+    "url",
+    "pet_friendly",
+    "furnished",
+    "unit_name",
+    "beds",
+    "baths",
+    "area",
+    "rent",
+]
+
+AMENITIES = [
+    "Pet Friendly",
+    "Furnished",
+    "Gym",
+    "Bike Room",
+    "Exercise Room",
+    "Fitness Area",
+    "Swimming Pool",
+    "Recreation Room",
+    "Recreation",
+    "Heating",
+    "Water",
+    "Internet / WiFi",
+    "Ensuite Laundry",
+    "Washer",
+    "Laundry Facilities",
+    "Parking",
+    "Parking - Underground",
+]
+
+
 failed_urls = []
 
 scraper = cloudscraper.create_scraper()
 
 
-def fetch_building_details(url) -> json:
+def fetch_building_details(url: str) -> json:
     """
-    Fetch building details from the given URL
+    Fetch building details from the given URL.
 
     Parameters
     ----------
@@ -85,15 +125,23 @@ def fetch_building_details(url) -> json:
                 failed_urls.append(url)
 
 
-def extract_building_urls(text) -> list:
+def extract_building_urls(html_content: str, writer: object, write_to_json: bool = False) -> list:
     """
-    Extract building URLs from the given text.
-    Then fetch building details from each URL and aggregate all building's details as a list.
+    Extract building URLs from the given html content.
+    Fetch the content from each building URL, which contains the building details and its available units.
+    For each available unit, write the unit's details to a CSV file.
+    If write_to_json is True, aggregate all building's details as a list and return the list, which will be written in a json file later.
+    If write_to_json is False, return an empty list.
 
     Parameters
     ----------
-    text : str
+    html_content : str
         The HTML content of the page.
+    writer : csv.writer
+        The CSV writer object.
+    write_to_json : bool
+        If True, aggregate all building's details as a list and return the list.
+
 
     Returns
     -------
@@ -104,7 +152,7 @@ def extract_building_urls(text) -> list:
 
     # Match the content within the <script type="application/ld+json"> block
     pattern = r'<script type="application/ld\+json">\s*(\{.*?\})\s*</script>'
-    matches = re.findall(pattern, text, re.DOTALL)
+    matches = re.findall(pattern, html_content, re.DOTALL)
 
     for match in matches:
         building = json.loads(match)
@@ -113,21 +161,30 @@ def extract_building_urls(text) -> list:
         if url:
             data = fetch_building_details(url)
             if data:
-                buildings.append(data)
+                write_row_to_csv(writer, data)
+
+                if write_to_json:
+                    buildings.append(data)
 
     return buildings
 
 
-def fetch_main_page(main_page_url) -> list:
+def fetch_main_page(main_page_url: str, writer: object, write_to_json: bool = False) -> list:
     """
-    Fetch the main page and extract the number of pages.
-    Then fetch building URLs from each page.
-    Return the aggregate of data from each building URL.
+    Fetch the main page and extract the number of returned pages when search for rentals at certain location, eg.: "https://rentals.ca/halifax/all-apartments-condos".
+    For each page, fetch its content and extract building URLs by calling function extract_building_urls(html_content, writer, write_to_json).
+    Within the function extract_building_urls, write the unit's detail of the fetched building data into a csv file.
+    If write_to_json is True, aggregate all building's details as a list and return the list, which will be written in a json file later.
+    If write_to_json is False, return an empty list.s
 
     Parameters
     ----------
     main_page_url : str
         The URL of the main page, eg.: "https://rentals.ca/halifax/all-apartments-condos"
+    writer : csv.writer
+        The CSV writer object.
+    write_to_json : bool
+        If True, aggregate all building's details as a list and return the list.
 
     Returns
     -------
@@ -135,6 +192,7 @@ def fetch_main_page(main_page_url) -> list:
         A list of building details.
     """
     attempt = 0
+    buildings = []
 
     while attempt < MAX_ATTEMPTS:
         time.sleep(SLEEP_TIME[attempt])
@@ -153,7 +211,7 @@ def fetch_main_page(main_page_url) -> list:
                 num_pages = 1
 
             # Extract building urls from the first page
-            buildings = extract_building_urls(response.text)
+            buildings += extract_building_urls(response.text, writer, write_to_json)
 
             # Extract building urls from the subsequent pages
             for page in range(2, int(num_pages) + 1):
@@ -169,7 +227,7 @@ def fetch_main_page(main_page_url) -> list:
 
                     if response.status_code == 200:
                         print(f"Fetching successfully: {url}", end="\r")
-                        buildings += extract_building_urls(response.text)
+                        buildings += extract_building_urls(response.text, writer, write_to_json)
                         break
                     else:
                         print(
@@ -178,7 +236,7 @@ def fetch_main_page(main_page_url) -> list:
                         if attempt_inner == MAX_ATTEMPTS:
                             failed_urls.append(url)
 
-            return buildings
+            break
 
         else:
             print(
@@ -187,135 +245,85 @@ def fetch_main_page(main_page_url) -> list:
             if attempt == MAX_ATTEMPTS:
                 failed_urls.append(main_page_url)
 
-    return []
+    return buildings
 
 
-def get_amenities(json_file) -> list:
-    """
-    Get all amenities from the JSON file.
+def write_row_to_csv(writer: object, building_data: json):
+    company = building_data.get("company")
+    if company:
+        company_name = company.get("name")
+    else:
+        company_name = None
 
-    Parameters
-    ----------
-    json_file : str
-        The path to the JSON file, which contains the building details.
-
-    Returns
-    -------
-    amenities : list
-        A list of all distinct amenities of all buildings.
-    """
-    with open(json_file, "r", encoding="utf-8") as file:
-        buildings = json.load(file)
-
-    amenities = set()
-
-    for building in buildings:
-        for amenity in building.get("amenities"):
-            amenities.add(amenity.get("name"))
-
-    return list(amenities)
-
-
-def write_data_to_one_csv(json_file, unit_full_info_csv_file):
-    """
-    Write the data from the JSON file to one CSV file: units.csv
-
-    Parameters
-    ----------
-    json_file : str
-        The path to the JSON file, which contains the building details.
-    unit_full_info_csv_file : str
-        The path to the unit CSV file, each row contains the information of a unit and of the building the unit belongs to.
-    """
-    with open(json_file, "r", encoding="utf-8") as file:
-        buildings = json.load(file)
-
-    with open(unit_full_info_csv_file, "w", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-
-        header = [
-            "building_id",
-            "unit_id",
-            "company",
-            "building_name",
-            "address",
-            "postal_code",
-            "city",
-            "property_type",
-            "url",
-            "view_on_map_url",
-            "pet_friendly",
-            "furnished",
+    for unit in building_data.get("units"):
+        row = [
+            building_data.get("id"),
+            unit.get("id"),
+            company_name,
+            building_data.get("name"),
+            building_data.get("address1"),
+            building_data.get("postal_code"),
+            building_data.get("city_name"),
+            building_data.get("property_type"),
+            building_data.get("url"),
+            building_data.get("pet_friendly"),
+            building_data.get("furnished"),
+            unit.get("name"),
+            unit.get("beds"),
+            unit.get("baths"),
+            unit.get("dimensions"),
+            unit.get("rent"),
         ]
 
-        amenities = get_amenities(json_file)  # list of all possible amenities
-        header += amenities
+        # For each amenity, add True if the amenity is in the building's amenities, else add an empty string
+        for amenity in AMENITIES:
+            row.append(True if amenity in [a.get("name") for a in building_data.get("amenities")] else "")
 
-        header += ["unit_name", "beds", "baths", "area", "rent"]
-
-        writer.writerow(header)
-
-        for building in buildings:
-            company = building.get("company")
-            if company:
-                company_name = company.get("name")
-            else:
-                company_name = None
-
-            for unit in building.get("units"):
-                row = [
-                    building.get("id"),
-                    unit.get("id"),
-                    company_name,
-                    building.get("name"),
-                    building.get("address1"),
-                    building.get("postal_code"),
-                    building.get("city_name"),
-                    building.get("property_type"),
-                    building.get("url"),
-                    building.get("view_on_map_url"),
-                    building.get("pet_friendly"),
-                    building.get("furnished"),
-                ]
-
-                # For each amenity, add True if the amenity is in the building's amenities, else add an empty string
-                for amenity in amenities:
-                    row.append(True if amenity in [a.get("name") for a in building.get("amenities")] else "")
-
-                row += [
-                    unit.get("name"),
-                    unit.get("beds"),
-                    unit.get("baths"),
-                    unit.get("dimensions"),
-                    unit.get("rent"),
-                ]
-
-                writer.writerow(row)
+        writer.writerow(row)
 
 
 def data_pipeline(
     fetch_data: bool = False,
     main_urls: list[str] = [],
+    csv_file: str = None,
     json_file: str = None,
-    unit_full_info_csv_file: str = None,
 ):
     """
-    If fetch_data is True and main_url is not None and json_file is not None,
-    call function fetch_main_page(main_url, json_file) that will write fetched data into the json file.
+    If fetch_data is True and main_urls is not None and csv_file is not None, write the fetched data into a csv file.
+    If json_file is also not None, will write the fetched data into a json file.
 
-    If json_file is not None and unit_full_info_csv_file is not None,
-    call function write_data_to_one_csv(json_file, unit_full_info_csv_file) that will write data from the json file into one csv file.
+    Parameters
+    ----------
+    fetch_data : bool
+        If True, fetch data from the a list of urls.
+    main_urls : list[str]
+        A list of main urls. E.g.: ["https://rentals.ca/halifax/all-apartments-condos", "https://rentals.ca/dartmouth/all-apartments-condos"]
+    json_file : str
+        The path to the output JSON file, which contains the building details.
+    csv_file : str
+        The path to the output CSV file, which contains the unit details.
     """
+    if not main_urls or not fetch_data or not csv_file:
+        return
+
     if not os.path.exists("data"):
         os.makedirs("data")
 
-    buildings = []
-    if fetch_data and len(main_urls) > 0 and json_file:
-        for main_url in main_urls:
-            buildings += fetch_main_page(main_url)
+    with open(csv_file, "a", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
 
-        with open(json_file, "w", encoding="utf-8") as file:
-            file.write(json.dumps(buildings, indent=2))
+        # Write the header to the CSV file if the file is empty
+        if os.path.getsize(csv_file) == 0:
+            header = ATTRIBUTES + AMENITIES
+            writer.writerow(header)
+
+        buildings = []
+        for main_url in main_urls:
+            buildings += fetch_main_page(main_url, writer, write_to_json=(json_file is not None))
+
+        if json_file:
+            with open(json_file, "w", encoding="utf-8") as file:
+                file.write(json.dumps(buildings, indent=2))
 
         if failed_urls:
             print("\nFailed URLs:")
@@ -323,9 +331,6 @@ def data_pipeline(
                 print(url)
         else:
             print("\nAll URLs fetched successfully!")
-
-    if json_file and unit_full_info_csv_file:
-        write_data_to_one_csv(json_file, unit_full_info_csv_file)
 
 
 def main():
@@ -349,8 +354,7 @@ def main():
     data_pipeline(
         fetch_data=True,
         main_urls=main_urls,
-        json_file="./data/buildings.json",
-        unit_full_info_csv_file="./data/units_full_info.csv",
+        csv_file="./data/units_full_info.csv",
     )
 
 
