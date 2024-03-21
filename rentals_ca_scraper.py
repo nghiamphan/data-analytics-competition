@@ -9,37 +9,65 @@ import time
 MAX_ATTEMPTS = 5
 SLEEP_TIME = [0, 1, 2, 3, 4, 5]
 
-URL_APARTMENTS_CONDOS_HALIFAX = "https://rentals.ca/halifax/all-apartments-condos"
-URL_APARTMENTS_HALIFAX = "https://rentals.ca/halifax/all-apartments"
-URL_CONDOS_HALIFAX = "https://rentals.ca/halifax/all-condos"
+# Cities in Atlantic Canada
+URL_HALIFAX = "https://rentals.ca/halifax/all-apartments-condos"  # Halifax, NS
+URL_DARTMOUTH = "https://rentals.ca/dartmouth/all-apartments-condos"  # Dartmouth, NS
 
-URL_APARTMENTS_CONDOS_DARTMOUTH = "https://rentals.ca/dartmouth/all-apartments-condos"
+URL_MONCTON = "https://rentals.ca/moncton/all-apartments-condos"  # Moncton, New Brunswick
+URL_SAINT_JOHN = "https://rentals.ca/saint-john/all-apartments-condos"  # Saint John, New Brunswick
+URL_FREDERICTON = "https://rentals.ca/fredericton/all-apartments-condos"  # Fredericton, New Brunswick
 
-URL_APARTMENTS_CONDOS_SAINT_JOHN = "https://rentals.ca/saint-john/all-apartments-condos"  # Saint John, New Brunswick
+URL_CHARLOTTETOWN = "https://rentals.ca/charlottetown/all-apartments-condos"  # Charlottetown, PEI
 
-URL_APARTMENTS_CONDOS_FREDERICTON = "https://rentals.ca/fredericton/all-apartments-condos"  # Fredericton, New Brunswick
+URL_ST_JOHN = "https://rentals.ca/st-johns/all-apartments-condos"  # St. John's, NL
 
-URL_APARTMENTS_CONDOS_MONCTON = "https://rentals.ca/moncton/all-apartments-condos"  # Moncton, New Brunswick
+# Choose cities that have somewhat similar rent to Halifax based on this report: https://rentals.ca/national-rent-report
+URL_VICTORIA = "https://rentals.ca/victoria/all-apartments-condos"  # Victoria, British Columbia
+URL_SURREY = "https://rentals.ca/surrey/all-apartments-condos"  # Surrey, British Columbia (Vanouver)
+URL_KELWONA = "https://rentals.ca/kelowna/all-apartments-condos"  # Kelowna, British Columbia
 
-URL_APARTMENTS_CONDOS_CHARLOTTETOWN = "https://rentals.ca/charlottetown/all-apartments-condos"  # Charlottetown, PEI
+URL_BURLINGTON = "https://rentals.ca/burlington/all-apartments-condos"  # Burlington, Ontario (Toronto)
+URL_BRAMPTON = "https://rentals.ca/brampton/all-apartments-condos"  # Brampton, Ontario (Toronto)
+URL_HAMILTON = "https://rentals.ca/hamilton/all-apartments-condos"  # Hamilton, Ontario (Toronto)
 
-URL_APARTMENTS_CONDOS_ST_JOHN = "https://rentals.ca/st-johns/all-apartments-condos"  # St. John's, NL
+URL_WATERLOO = "https://rentals.ca/waterloo/all-apartments-condos"  # Waterloo, Ontario (next to Kitchener)
+URL_KITCHENER = "https://rentals.ca/kitchener/all-apartments-condos"  # Kitchener, Ontario (next to Waterloo)
 
-URL_APARTMENTS_CONDOS_WINNIPEG = "https://rentals.ca/winnipeg/all-apartments-condos"  # Winnipeg, Manitoba
+URL_GELPH = "https://rentals.ca/guelph/all-apartments-condos"  # Guelph, Ontario (between Kitchener and Toronto)
 
-URL_APARTMENTS_CONDOS_REGINA = "https://rentals.ca/regina/all-apartments-condos"  # Regina, Saskatchewan
+URL_BARRIE = "https://rentals.ca/barrie/all-apartments-condos"  # Barrie, Ontario (north of Toronto)
 
-URL_APARTMENTS_CONDOS_SASKATOON = "https://rentals.ca/saskatoon/all-apartments-condos"  # Saskatoon, Saskatchewan
+URL_OTTAWA = "https://rentals.ca/ottawa/all-apartments-condos"  # Ottawa, Ontario
 
-URL_APARTMENTS_CONDOS_EDMONTON = "https://rentals.ca/edmonton/all-apartments-condos"  # Edmonton, Alberta
+URL_KINGSTON = "https://rentals.ca/kingston/all-apartments-condos"  # Kingston, Ontario
 
-URL_APARTMENTS_CONDOS_CALGARY = "https://rentals.ca/calgary/all-apartments-condos"  # Calgary, Alberta
+URL_LONDON = "https://rentals.ca/london/all-apartments-condos"  # London, Ontario
 
-URL_APARTMENTS_CONDOS_HAMILTON = "https://rentals.ca/hamilton/all-apartments-condos"  # Hamilton, Ontario
+ATLANTIC_CANADA = [
+    URL_HALIFAX,
+    URL_DARTMOUTH,
+    URL_MONCTON,
+    URL_SAINT_JOHN,
+    URL_FREDERICTON,
+    URL_CHARLOTTETOWN,
+    URL_ST_JOHN,
+]
 
-URL_APARTMENTS_CONDOS_MISSISSAUGA = "https://rentals.ca/mississauga/all-apartments-condos"  # Mississauga, Ontario
-
-URL_APARTMENTS_CONDOS_TORONTO = "https://rentals.ca/toronto/all-apartments-condos"  # Toronto, Ontario
+SIMILAR_RENT_CITIES = [
+    URL_VICTORIA,
+    URL_SURREY,
+    URL_KELWONA,
+    URL_BURLINGTON,
+    URL_BRAMPTON,
+    URL_HAMILTON,
+    URL_WATERLOO,
+    URL_KITCHENER,
+    URL_GELPH,
+    URL_BARRIE,
+    URL_OTTAWA,
+    URL_KINGSTON,
+    URL_LONDON,
+]
 
 ATTRIBUTES = [
     "building_id",
@@ -80,6 +108,7 @@ AMENITIES = [
     "Parking - Underground",
 ]
 
+OUTPUT_CSV_FILE = "./data/units_full_info.csv"
 
 failed_urls = []
 
@@ -292,12 +321,12 @@ def write_row_to_csv(writer: object, building_data: json):
 def data_pipeline(
     fetch_data: bool = False,
     main_urls: list[str] = [],
-    csv_file: str = None,
-    json_file: str = None,
+    output_csv_file: str = None,
+    output_json_file: str = None,
 ):
     """
-    If fetch_data is True and main_urls is not None and csv_file is not None, write the fetched data into a csv file.
-    If json_file is also not None, will write the fetched data into a json file.
+    If fetch_data is True and main_urls is not None and output_csv_file is not None, write the fetched data into the csv file.
+    If output_json_file is also not None, will write the fetched data into the json file.
 
     Parameters
     ----------
@@ -305,70 +334,52 @@ def data_pipeline(
         If True, fetch data from the a list of urls.
     main_urls : list[str]
         A list of main urls. E.g.: ["https://rentals.ca/halifax/all-apartments-condos", "https://rentals.ca/dartmouth/all-apartments-condos"]
-    json_file : str
-        The path to the output JSON file, which contains the building details.
-    csv_file : str
+    output_csv_file : str
         The path to the output CSV file, which contains the unit details.
+    output_json_file : str
+        The path to the output JSON file, which contains the unit details.
     """
     global existing_unit_ids
 
-    if not main_urls or not fetch_data or not csv_file:
+    if not main_urls or not fetch_data or not output_csv_file:
         return
 
     if not os.path.exists("data"):
         os.makedirs("data")
 
-    if os.path.exists(csv_file):
-        df = pd.read_csv(csv_file)
-
-        existing_unit_ids = set(df["unit_id"])
-
-    with open(csv_file, "a", newline="", encoding="utf-8") as file:
+    with open(output_csv_file, "a", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
 
         # Write the header to the CSV file if the file is empty
-        if os.path.getsize(csv_file) == 0:
+        if os.path.getsize(output_csv_file) == 0:
             header = ATTRIBUTES + AMENITIES
             writer.writerow(header)
 
+        # Read the existing unit ids from the CSV file
+        df = pd.read_csv(output_csv_file)
+        existing_unit_ids = set(df["unit_id"])
+
         buildings = []
         for main_url in main_urls:
-            buildings += fetch_main_page(main_url, writer, write_to_json=(json_file is not None))
+            buildings += fetch_main_page(main_url, writer, write_to_json=(output_json_file is not None))
 
-        if json_file:
-            with open(json_file, "w", encoding="utf-8") as file:
+        if output_json_file:
+            with open(output_json_file, "w", encoding="utf-8") as file:
                 file.write(json.dumps(buildings, indent=2))
 
         if failed_urls:
-            print("\nFailed URLs:")
+            print("\n\nFailed URLs:")
             for url in failed_urls:
                 print(url)
         else:
-            print("\nAll URLs fetched successfully!")
+            print("\n\nAll URLs fetched successfully!")
 
 
 def main():
-    main_urls = [
-        URL_APARTMENTS_CONDOS_HALIFAX,
-        URL_APARTMENTS_CONDOS_DARTMOUTH,
-        URL_APARTMENTS_CONDOS_SAINT_JOHN,
-        URL_APARTMENTS_CONDOS_FREDERICTON,
-        URL_APARTMENTS_CONDOS_MONCTON,
-        URL_APARTMENTS_CONDOS_CHARLOTTETOWN,
-        URL_APARTMENTS_CONDOS_ST_JOHN,
-        URL_APARTMENTS_CONDOS_WINNIPEG,
-        URL_APARTMENTS_CONDOS_REGINA,
-        URL_APARTMENTS_CONDOS_SASKATOON,
-        URL_APARTMENTS_CONDOS_EDMONTON,
-        URL_APARTMENTS_CONDOS_CALGARY,
-        URL_APARTMENTS_CONDOS_HAMILTON,
-        URL_APARTMENTS_CONDOS_MISSISSAUGA,
-    ]
-
     data_pipeline(
         fetch_data=True,
-        main_urls=main_urls,
-        csv_file="./data/units_full_info.csv",
+        main_urls=ATLANTIC_CANADA + SIMILAR_RENT_CITIES,
+        output_csv_file=OUTPUT_CSV_FILE,
     )
 
 
