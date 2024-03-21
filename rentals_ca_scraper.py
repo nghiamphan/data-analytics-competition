@@ -114,8 +114,6 @@ failed_urls = []
 
 scraper = cloudscraper.create_scraper()
 
-existing_unit_ids = set()
-
 
 def fetch_building_details(url: str) -> json:
     """
@@ -288,10 +286,6 @@ def write_row_to_csv(writer: object, building_data: json):
         company_name = None
 
     for unit in building_data.get("units"):
-        # Skip if the unit already exists in the CSV file
-        if unit.get("id") in existing_unit_ids:
-            continue
-
         row = [
             building_data.get("id"),
             unit.get("id"),
@@ -339,25 +333,17 @@ def data_pipeline(
     output_json_file : str
         The path to the output JSON file, which contains the unit details.
     """
-    global existing_unit_ids
-
     if not main_urls or not fetch_data or not output_csv_file:
         return
 
     if not os.path.exists("data"):
         os.makedirs("data")
 
-    with open(output_csv_file, "a", newline="", encoding="utf-8") as file:
+    with open(output_csv_file, "w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
 
-        # Write the header to the CSV file if the file is empty
-        if os.path.getsize(output_csv_file) == 0:
-            header = ATTRIBUTES + AMENITIES
-            writer.writerow(header)
-
-        # Read the existing unit ids from the CSV file
-        df = pd.read_csv(output_csv_file)
-        existing_unit_ids = set(df["unit_id"])
+        # Write the header row
+        writer.writerow(ATTRIBUTES + AMENITIES)
 
         buildings = []
         for main_url in main_urls:
