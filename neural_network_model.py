@@ -164,6 +164,7 @@ class NeuralNetwork(nn.Module):
     def __init__(
         self,
         input_dim,
+        n_hidden_layers=1,
         d_ff=64,
         postal_code_first_3_dim=4,
         postal_code_dim=2,
@@ -180,11 +181,19 @@ class NeuralNetwork(nn.Module):
         self.postal_code_embedding_first_3 = nn.Embedding(n_postal_codes_first_3, postal_code_first_3_dim)
         self.postal_code_embedding = nn.Embedding(n_postal_codes, postal_code_dim)
 
-        self.feed_forward = nn.Sequential(
-            nn.Linear(input_dim + postal_code_first_3_dim + postal_code_dim - 2, d_ff),
-            nn.ReLU(),
-            nn.Linear(d_ff, 1),
-        )
+        if n_hidden_layers == 0:
+            self.feed_forward = nn.Linear(input_dim + postal_code_first_3_dim + postal_code_dim - 2, 1)
+        else:
+            self.feed_forward = nn.Sequential(
+                nn.Linear(input_dim + postal_code_first_3_dim + postal_code_dim - 2, d_ff),
+                nn.ReLU(),
+            )
+
+            for _ in range(n_hidden_layers - 1):
+                self.feed_forward.add_module("hidden", nn.Linear(d_ff, d_ff))
+                self.feed_forward.add_module("relu", nn.ReLU())
+
+            self.feed_forward.add_module("output", nn.Linear(d_ff, 1))
 
         self.to(self.device)
 
