@@ -37,6 +37,7 @@ def process_data():
 
     # Process the "studio" column
     df["studio"] = (df["beds"] == 0).astype(int)
+    df.loc[df["beds"] == 0, "beds"] = 1
 
     # Normalize the 'beds', 'baths' and 'area' columns
     df[["beds", "baths", "area"]] = MinMaxScaler().fit_transform(df[["beds", "baths", "area"]])
@@ -76,6 +77,14 @@ def process_data():
 
     # Process the 'undergrounnd_parking' column
     df["underground_parking"] = df[["Parking - Underground"]].any(axis=True).astype(int)
+
+    # Filter out rows with missing or 0 values for 'area' and 'rent'
+    df = df[(df["area"].notna()) & (df["area"] != 0) & (df["rent"].notna()) & (df["rent"] != 0)]
+
+    # Filter apartments
+    df = df[df["property_type"] == "apartment"]
+
+    print("Dataset size:", len(df))
 
     input = df[
         [
@@ -124,10 +133,6 @@ def process_missing_area(df):
         if row["area"] == 0 or pd.isna(row["area"]):
             if (row["beds"], row["baths"]) in mean_area_dict:
                 df.at[index, "area"] = mean_area_dict[(row["beds"], row["baths"])]
-            elif not float(row["beds"]).is_integer():
-                df.at[index, "area"] = mean_area_dict[(math.floor(row["beds"]), row["baths"])]
-            elif not float(row["baths"]).is_integer():
-                df.at[index, "area"] = mean_area_dict[(row["beds"], math.floor(row["baths"]))]
 
     # Drop the 'mean_area' column
     df.drop(columns=["mean_area"], inplace=True)
@@ -161,38 +166,39 @@ def train_and_test(dataloader, input_test, target_test):
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-5)
 
-    for epoch in range(500):
+    for epoch in range(200):
         for input_batch, target_batch in dataloader:
 
             input_batch = input_batch.to(model.device)
-            target_batch = target_batch.to(model.device)
+            target_batch = target_batch.to(model.device).unsqueeze(1)
 
             optimizer.zero_grad()
-            outputs = model(input_batch).squeeze()
+            outputs = model(input_batch)
 
             loss = criterion(outputs, target_batch)
             loss.backward()
             optimizer.step()
 
-        if epoch % 50 == 0:
+        if epoch % 20 == 0:
             print(f"Epoch {epoch}, Loss: {loss.item()}")
 
     # evaluate
     model.eval()
     with torch.no_grad():
         input_test = input_test.to(model.device)
-        target_test = target_test.to(model.device)
+        target_test = target_test.to(model.device).unsqueeze(1)
 
-        outputs = model(input_test).squeeze()
+        outputs = model(input_test)
         loss = criterion(outputs, target_test)
         print(f"\nTest Loss: {loss.item()}")
 
     predictions = rent_scaler.inverse_transform(outputs.cpu().numpy().reshape(-1, 1)).flatten()
     actual = rent_scaler.inverse_transform(target_test.cpu().numpy().reshape(-1, 1)).flatten()
 
-    print("\nPredictions vs Actual")
-    for i in range(len(predictions)):
-        print(f"{predictions[i]:<10.2f} {actual[i]:.0f}")
+    with open("./data/prediction.txt", "w") as f:
+        f.write("Prediction - Actual - Difference\n")
+        for i in range(len(predictions)):
+            f.write(f"{predictions[i]:<10.2f} {actual[i]:<10.0f} {predictions[i] - actual[i]:.2f}\n")
 
 
 def main():
