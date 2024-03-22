@@ -2,6 +2,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import optuna
 import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
@@ -29,7 +30,7 @@ INPUT_COLUMNS = [
     "underground_parking",
 ]
 
-gv_input_scaler = MinMaxScaler(feature_range=(1, 3))
+gv_input_scaler = MinMaxScaler()
 gv_rent_scaler = MinMaxScaler()
 
 gv_n_postal_codes_first_3 = 0
@@ -48,10 +49,8 @@ def setup_data():
     # Create TensorDatasets for the training set
     train_dataset = TensorDataset(input_train, target_train)
 
-    # Create a DataLoader for the training set
-    dataloader = DataLoader(train_dataset, batch_size=4, shuffle=True)
-
-    return dataloader, input_test, target_test
+    # return dataloader, input_test, target_test
+    return input_train, target_train, input_test, target_test
 
 
 def process_data():
@@ -136,7 +135,7 @@ def process_data():
     return input, target
 
 
-def process_missing_area(df):
+def process_missing_area(df: pd.DataFrame):
     # Calculate the mean 'areas' for each group of 'beds' and 'baths'
     df["mean_area"] = df[(df["area"] != 0) & (df["area"].notna())].groupby(["beds", "baths"])["area"].transform("mean")
 
@@ -163,13 +162,13 @@ def process_missing_area(df):
 class NeuralNetwork(nn.Module):
     def __init__(
         self,
-        input_dim,
-        n_hidden_layers=1,
-        d_ff=64,
-        postal_code_first_3_dim=4,
-        postal_code_dim=2,
-        n_postal_codes_first_3=1000,
-        n_postal_codes=2000,
+        input_dim: int,
+        n_hidden_layers: int = 1,
+        hidden_dim: int = 64,
+        postal_code_first_3_dim: int = 4,
+        postal_code_dim: int = 2,
+        n_postal_codes_first_3: int = 1000,
+        n_postal_codes: int = 2000,
     ):
         super(NeuralNetwork, self).__init__()
 
@@ -185,19 +184,19 @@ class NeuralNetwork(nn.Module):
             self.feed_forward = nn.Linear(input_dim + postal_code_first_3_dim + postal_code_dim - 2, 1)
         else:
             self.feed_forward = nn.Sequential(
-                nn.Linear(input_dim + postal_code_first_3_dim + postal_code_dim - 2, d_ff),
+                nn.Linear(input_dim + postal_code_first_3_dim + postal_code_dim - 2, hidden_dim),
                 nn.ReLU(),
             )
 
             for _ in range(n_hidden_layers - 1):
-                self.feed_forward.add_module("hidden", nn.Linear(d_ff, d_ff))
+                self.feed_forward.add_module("hidden", nn.Linear(hidden_dim, hidden_dim))
                 self.feed_forward.add_module("relu", nn.ReLU())
 
-            self.feed_forward.add_module("output", nn.Linear(d_ff, 1))
+            self.feed_forward.add_module("output", nn.Linear(hidden_dim, 1))
 
         self.to(self.device)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
         # Split the input into the postal code and other features
         postal_code_first_3 = x[:, 0].long()
         postal_code = x[:, 1].long()
@@ -213,43 +212,91 @@ class NeuralNetwork(nn.Module):
         out = self.feed_forward(x)
         return out
 
+    def train_model(
+        self,
+        input_train: torch.Tensor,
+        target_train: torch.Tensor,
+        epochs: int,
+        batch_size: int = 8,
+        lr: float = 1e-5,
+        print_loss: bool = False,
+    ):
+        dataloader = DataLoader(TensorDataset(input_train, target_train), batch_size=batch_size, shuffle=True)
 
-def train_and_test(dataloader, input_test, target_test):
+        criterion = nn.MSELoss()
+        optimizer = optim.Adam(self.parameters(), lr=lr)
+
+        for epoch in range(1, epochs + 1):
+            for input_batch, target_batch in dataloader:
+
+                input_batch = input_batch.to(self.device)
+                target_batch = target_batch.to(self.device).unsqueeze(1)
+
+                optimizer.zero_grad()
+                prediction = self(input_batch)
+
+                loss = criterion(prediction, target_batch)
+                loss.backward()
+                optimizer.step()
+
+            if print_loss and epoch % 20 == 0:
+                print(f"Epoch {epoch}, Loss: {loss.item()}")
+
+    def evaluate(self, input_test: torch.Tensor, target_test: torch.Tensor) -> tuple[float, torch.Tensor]:
+        self.eval()
+        with torch.no_grad():
+            input_test = input_test.to(self.device)
+            target_test = target_test.to(self.device).unsqueeze(1)
+
+            prediction = self(input_test)
+            loss = nn.MSELoss()(prediction, target_test)
+
+        return loss.item(), prediction
+
+
+def objective(
+    trial,
+    input_train: torch.Tensor,
+    target_train: torch.Tensor,
+    epochs: int,
+) -> float:
+
+    n_hidden_layers = trial.suggest_int("n_hidden_layers", 0, 5)
+    hidden_dim = trial.suggest_categorical("hidden_dim", [32, 64, 128, 256])
+    postal_code_first_3_dim = trial.suggest_categorical("postal_code_first_3_dim", [2, 4, 8, 16])
+    postal_code_dim = trial.suggest_categorical("postal_code_dim", [2, 4, 8, 16])
+
+    # Split the training set into a training and validation set
+    input_train, input_val, target_train, target_val = train_test_split(input_train, target_train, test_size=0.2)
+
     model = NeuralNetwork(
-        dataloader.dataset.tensors[0].shape[1],
+        input_train.shape[1],
+        n_hidden_layers=n_hidden_layers,
+        hidden_dim=hidden_dim,
+        postal_code_first_3_dim=postal_code_first_3_dim,
+        postal_code_dim=postal_code_dim,
         n_postal_codes_first_3=gv_n_postal_codes_first_3,
         n_postal_codes=gv_n_postal_codes,
     )
 
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=1e-5)
+    model.train_model(input_train, target_train, epochs)
+    mse = model.evaluate(input_val, target_val)[0]
+    return mse
 
-    for epoch in range(200):
-        for input_batch, target_batch in dataloader:
 
-            input_batch = input_batch.to(model.device)
-            target_batch = target_batch.to(model.device).unsqueeze(1)
+def model_tuning(
+    input_train: torch.Tensor,
+    target_train: torch.Tensor,
+    epochs: int,
+    n_trials: int,
+) -> dict[str, float]:
+    study = optuna.create_study(direction="minimize")
+    study.optimize(
+        lambda trial: objective(trial, input_train, target_train, epochs),
+        n_trials=n_trials,
+    )
 
-            optimizer.zero_grad()
-            prediction = model(input_batch)
-
-            loss = criterion(prediction, target_batch)
-            loss.backward()
-            optimizer.step()
-
-        if epoch % 20 == 0:
-            print(f"Epoch {epoch}, Loss: {loss.item()}")
-
-    # evaluate
-    model.eval()
-    with torch.no_grad():
-        input_test = input_test.to(model.device)
-        target_test = target_test.to(model.device).unsqueeze(1)
-
-        prediction = model(input_test)
-        loss = criterion(prediction, target_test)
-        print(f"\nTest Loss: {loss.item()}")
-        print_result(input_test, target_test, prediction)
+    return study.best_params
 
 
 def print_result(input_test: torch.Tensor, target_test: torch.Tensor, prediction: torch.Tensor):
@@ -288,8 +335,24 @@ def print_result(input_test: torch.Tensor, target_test: torch.Tensor, prediction
 
 
 def main():
-    dataloader, input_test, target_test = setup_data()
-    train_and_test(dataloader, input_test, target_test)
+    input_train, target_train, input_test, target_test = setup_data()
+
+    best_params = model_tuning(input_train, target_train, epochs=100, n_trials=20)
+
+    print("Best parameters:", best_params)
+
+    model = NeuralNetwork(
+        input_train.shape[1],
+        n_postal_codes_first_3=gv_n_postal_codes_first_3,
+        n_postal_codes=gv_n_postal_codes,
+        **best_params,
+    )
+
+    model.train_model(input_train, target_train, epochs=200, print_loss=True)
+
+    test_loss, prediction = model.evaluate(input_test, target_test)
+    print("Test Loss:", test_loss)
+    print_result(input_test, target_test, prediction)
 
 
 if __name__ == "__main__":

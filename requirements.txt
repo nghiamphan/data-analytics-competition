@@ -1,4 +1,5 @@
 cloudscraper
+optuna
 pandas
 scikit-learn
 torch -f https://download.pytorch.org/whl/cu121
