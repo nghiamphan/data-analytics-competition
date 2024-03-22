@@ -9,6 +9,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import DataLoader, TensorDataset
 
+CSV_FILE_PROCESSED = "./data/units_info_processed.csv"
+
 INPUT_COLUMNS = [
     "postal_code_first_3_idx",
     "postal_code_idx",
@@ -40,6 +42,8 @@ gv_n_postal_codes = 0
 def setup_data():
     input, target = process_data()
 
+    print("Number of samples:", len(input), "\n")
+
     input = torch.tensor(input.values, dtype=torch.float32)
     target = torch.tensor(target.values, dtype=torch.float32)
 
@@ -53,8 +57,8 @@ def setup_data():
     return input_train, target_train, input_test, target_test
 
 
-def process_data():
-    df = pd.read_csv("data/units_full_info.csv")
+def process_data(raw_csv: str = CSV_FILE_PROCESSED):
+    df = pd.read_csv(raw_csv)
 
     # df = df[df["city"] == "Ottawa"]
 
@@ -72,8 +76,8 @@ def process_data():
     df.loc[df["beds"] == 0, "beds"] = 1
 
     # Remove outliers based on the rent-to-area ratio
-    df["rent_to_area"] = df["rent"] / df["area"]
-    df = df[(df["rent_to_area"] > 1) & (df["rent_to_area"] < 4)]
+    df["rent_to_unit_area_ratio"] = df["rent"] / df["area"]
+    df = df[(df["rent_to_unit_area_ratio"] > 1) & (df["rent_to_unit_area_ratio"] < 4)]
 
     # Convert postal_code to category and then to its corresponding codes
     df = df[df["postal_code"].notna()]
@@ -88,49 +92,16 @@ def process_data():
     # Normalize the 'beds', 'baths' and 'area' columns
     df[["beds", "baths", "area"]] = gv_input_scaler.fit_transform(df[["beds", "baths", "area"]])
 
-    # Process the 'pet_friendly' column
-    df["pet_friendly"] = df[["pet_friendly", "Pet Friendly"]].any(axis=True).astype(int)
-
-    # Process the 'furnished' column
-    df["furnished"] = df[["furnished", "Furnished"]].any(axis=True).astype(int)
-
-    # Process the 'fitness_center' column
-    df["fitness_center"] = df[["Gym", "Bike Room", "Exercise Room", "Fitness Area"]].any(axis=True).astype(int)
-
-    # Process the "swimmming_pool" column
-    df["swimming_pool"] = df[["Swimming Pool"]].any(axis=True).astype(int)
-
-    # Process the "recreation_room" column
-    df["recreation_room"] = df[["Recreation Room", "Recreation"]].any(axis=True).astype(int)
-
-    # Process the "heating" column
-    df["heating"] = df[["Heating"]].any(axis=True).astype(int)
-
-    # Process the "water" column
-    df["water"] = df[["Water"]].any(axis=True).astype(int)
-
-    # Process the "Internet" column
-    df["internet"] = df[["Internet / WiFi"]].any(axis=True).astype(int)
-
-    # Process the "ensuite_laundry" column
-    df["ensuite_laundry"] = df[["Ensuite Laundry", "Washer"]].any(axis=True).astype(int)
-
-    # Process the "laundry_room" column
-    df["laundry_room"] = df[["Laundry Facilities"]].any(axis=True).astype(int)
-
-    # Process the 'parking' column
-    df["parking"] = df[["Parking"]].any(axis=True).astype(int)
-
-    # Process the 'undergrounnd_parking' column
-    df["underground_parking"] = df[["Parking - Underground"]].any(axis=True).astype(int)
-
-    print("Dataset size:", len(df))
-
-    input = df[INPUT_COLUMNS]
-
     # Normalize the 'rent' column
     df["rent"] = gv_rent_scaler.fit_transform(df[["rent"]])
 
+    # Save the data which will be used for the model to a new CSV file
+    df.to_csv("data/units_info_for_model.csv", index=False)
+
+    df_halifax = df[df["city"] == "Halifax"]
+    df_halifax.to_csv("data/units_info_for_model_halifax.csv", index=False)
+
+    input = df[INPUT_COLUMNS]
     target = df["rent"]
     return input, target
 
@@ -339,7 +310,7 @@ def main():
 
     best_params = model_tuning(input_train, target_train, epochs=100, n_trials=20)
 
-    print("Best parameters:", best_params)
+    print("\nBest parameters:", best_params)
 
     model = NeuralNetwork(
         input_train.shape[1],

@@ -11,6 +11,7 @@ SLEEP_TIME = [0, 1, 2, 3, 4, 5]
 
 # Cities in Atlantic Canada
 URL_HALIFAX = "https://rentals.ca/halifax/all-apartments-condos"  # Halifax, NS
+URL_BEDFORD = "https://rentals.ca/bedford/all-apartments-condos"  # Bedford, NS
 URL_DARTMOUTH = "https://rentals.ca/dartmouth/all-apartments-condos"  # Dartmouth, NS
 
 URL_MONCTON = "https://rentals.ca/moncton/all-apartments-condos"  # Moncton, New Brunswick
@@ -43,9 +44,13 @@ URL_KINGSTON = "https://rentals.ca/kingston/all-apartments-condos"  # Kingston, 
 
 URL_LONDON = "https://rentals.ca/london/all-apartments-condos"  # London, Ontario
 
-ATLANTIC_CANADA = [
+HALIFAX = [
     URL_HALIFAX,
+    URL_BEDFORD,
     URL_DARTMOUTH,
+]
+
+ATLANTIC_CANADA = [
     URL_MONCTON,
     URL_SAINT_JOHN,
     URL_FREDERICTON,
@@ -77,6 +82,8 @@ ATTRIBUTES = [
     "address",
     "postal_code",
     "city",
+    "longitude",
+    "latitude",
     "property_type",
     "url",
     "pet_friendly",
@@ -85,6 +92,7 @@ ATTRIBUTES = [
     "beds",
     "baths",
     "area",
+    "rent_to_unit_area_ratio",
     "rent",
 ]
 
@@ -108,7 +116,9 @@ AMENITIES = [
     "Parking - Underground",
 ]
 
-OUTPUT_CSV_FILE = "./data/units_full_info.csv"
+OUTPUT_CSV_FILE_RAW = "./data/units_info_raw.csv"
+OUTPUT_CSV_FILE_PROCESSED = "./data/units_info_processed.csv"
+OUTPUT_CSV_FILE_PROCESSED_HALIFAX = "./data/units_info_processed_halifax.csv"
 
 failed_urls = []
 
@@ -286,6 +296,12 @@ def write_row_to_csv(writer: object, building_data: json):
         company_name = None
 
     for unit in building_data.get("units"):
+        area = unit.get("dimensions")
+        if area:
+            rent_to_unit_area_ratio = unit.get("rent") / area
+        else:
+            rent_to_unit_area_ratio = None
+
         row = [
             building_data.get("id"),
             unit.get("id"),
@@ -294,6 +310,8 @@ def write_row_to_csv(writer: object, building_data: json):
             building_data.get("address1"),
             building_data.get("postal_code"),
             building_data.get("city_name"),
+            building_data.get("location").get("lng"),
+            building_data.get("location").get("lat"),
             building_data.get("property_type"),
             building_data.get("url"),
             building_data.get("pet_friendly"),
@@ -301,7 +319,8 @@ def write_row_to_csv(writer: object, building_data: json):
             unit.get("name"),
             unit.get("beds"),
             unit.get("baths"),
-            unit.get("dimensions"),
+            area,
+            rent_to_unit_area_ratio,
             unit.get("rent"),
         ]
 
@@ -361,12 +380,94 @@ def data_pipeline(
             print("\n\nAll URLs fetched successfully!")
 
 
+def process_amenities(csv_file_raw: str, csv_file_processed: str):
+    """
+    Condense the amenities columns into a single column for each amenity.
+
+    Parameters
+    ----------
+    csv_file_raw : str
+        The path to the raw CSV file.
+    csv_file_processed : str
+        The path to the processed CSV file where the amenities columns are condensed.
+    """
+    df = pd.read_csv(csv_file_raw)
+
+    # Process the 'pet_friendly' column
+    df["pet_friendly"] = df[["pet_friendly", "Pet Friendly"]].any(axis=True).astype(int)
+
+    # Process the 'furnished' column
+    df["furnished"] = df[["furnished", "Furnished"]].any(axis=True).astype(int)
+
+    # Process the 'fitness_center' column
+    df["fitness_center"] = df[["Gym", "Bike Room", "Exercise Room", "Fitness Area"]].any(axis=True).astype(int)
+
+    # Process the "swimmming_pool" column
+    df["swimming_pool"] = df[["Swimming Pool"]].any(axis=True).astype(int)
+
+    # Process the "recreation_room" column
+    df["recreation_room"] = df[["Recreation Room", "Recreation"]].any(axis=True).astype(int)
+
+    # Process the "heating" column
+    df["heating"] = df[["Heating"]].any(axis=True).astype(int)
+
+    # Process the "water" column
+    df["water"] = df[["Water"]].any(axis=True).astype(int)
+
+    # Process the "Internet" column
+    df["internet"] = df[["Internet / WiFi"]].any(axis=True).astype(int)
+
+    # Process the "ensuite_laundry" column
+    df["ensuite_laundry"] = df[["Ensuite Laundry", "Washer"]].any(axis=True).astype(int)
+
+    # Process the "laundry_room" column
+    df["laundry_room"] = df[["Laundry Facilities"]].any(axis=True).astype(int)
+
+    # Process the 'parking' column
+    df["parking"] = df[["Parking"]].any(axis=True).astype(int)
+
+    # Process the 'undergrounnd_parking' column
+    df["underground_parking"] = df[["Parking - Underground"]].any(axis=True).astype(int)
+
+    df.drop(
+        columns=[
+            "Pet Friendly",
+            "Furnished",
+            "Gym",
+            "Bike Room",
+            "Exercise Room",
+            "Fitness Area",
+            "Swimming Pool",
+            "Recreation Room",
+            "Recreation",
+            "Heating",
+            "Water",
+            "Internet / WiFi",
+            "Ensuite Laundry",
+            "Washer",
+            "Laundry Facilities",
+            "Parking",
+            "Parking - Underground",
+        ],
+        inplace=True,
+    )
+
+    # Save the processed data to a new CSV file
+    df.to_csv(csv_file_processed, index=False)
+
+    # Save the processed data for Halifax to a new CSV file
+    df_halifax = df[df["city"].isin(["Halifax", "Bedford", "Dartmouth"])]
+    df_halifax.to_csv(OUTPUT_CSV_FILE_PROCESSED_HALIFAX, index=False)
+
+
 def main():
     data_pipeline(
         fetch_data=True,
-        main_urls=ATLANTIC_CANADA + SIMILAR_RENT_CITIES,
-        output_csv_file=OUTPUT_CSV_FILE,
+        main_urls=HALIFAX + ATLANTIC_CANADA + SIMILAR_RENT_CITIES,
+        output_csv_file=OUTPUT_CSV_FILE_RAW,
     )
+
+    process_amenities(OUTPUT_CSV_FILE_RAW, OUTPUT_CSV_FILE_PROCESSED)
 
 
 if __name__ == "__main__":
