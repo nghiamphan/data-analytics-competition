@@ -116,11 +116,33 @@ AMENITIES = [
     "Parking - Underground",
 ]
 
+NEIGHBORHOOD_SCORES = [
+    "daycares",
+    "primary_schools",
+    "high_schools",
+    "groceries",
+    "shopping",
+    "restaurants",
+    "cafes",
+    "pedestrian_friendly",
+    # "cycling_friendly",
+    "transit_friendly",
+    "car_friendly",
+    "vibrant",
+    "nightlife",
+    "quiet",
+    "parks",
+    # "greenery",
+]
+
+LOCALLOGIC_API_TOKEN = "924b6e5da7d532a96c1360e93618e2cfa8ed204f507e921e6535bbe3a37dfaff381d55fc6ef33e79"
+
 OUTPUT_CSV_FILE_RAW = "./data/units_info_raw.csv"
 OUTPUT_CSV_FILE_PROCESSED = "./data/units_info_processed.csv"
 OUTPUT_CSV_FILE_PROCESSED_HALIFAX = "./data/units_info_processed_halifax.csv"
 
 failed_urls = []
+n_missing_neighborhood_scores = 0
 
 scraper = cloudscraper.create_scraper()
 
@@ -289,19 +311,49 @@ def fetch_main_page(main_page_url: str, writer: object, write_to_json: bool = Fa
 
 
 def write_row_to_csv(writer: object, building_data: json):
+    global n_missing_neighborhood_scores
+
     company = building_data.get("company")
     if company:
         company_name = company.get("name")
     else:
         company_name = None
 
+    # Fetch neighborhood scores from LocalLogic API (we will set the score scale 0-1)
+    neighborhood_scores = {}
+    for key in NEIGHBORHOOD_SCORES:
+        neighborhood_scores[key] = 0
+
+    longitude = building_data.get("location").get("lng")
+    latitude = building_data.get("location").get("lat")
+
+    locallogic_url = f"https://api.locallogic.co/v1/scores?token={LOCALLOGIC_API_TOKEN}&lng={longitude}&lat={latitude}"
+    locallogic_response = scraper.get(locallogic_url)
+
+    if locallogic_response.status_code == 200:
+        response_scores = locallogic_response.json().get("data").get("attributes")
+
+        if response_scores:
+            for key in response_scores.keys():
+                neighborhood_scores[key] = response_scores[key].get("value") / 5
+            n_missing_neighborhood_scores += max(0, len(NEIGHBORHOOD_SCORES) - len(response_scores.keys()))
+        else:
+            n_missing_neighborhood_scores += len(NEIGHBORHOOD_SCORES)
+
+    else:
+        print(f"Status code: {locallogic_response.status_code} - Failed to fetch content from {locallogic_url}")
+        failed_urls.append(locallogic_url)
+
     for unit in building_data.get("units"):
+
+        # Calculate rent to unit area ratio
         area = unit.get("dimensions")
         if area:
             rent_to_unit_area_ratio = unit.get("rent") / area
         else:
             rent_to_unit_area_ratio = None
 
+        # create a row for each unit
         row = [
             building_data.get("id"),
             unit.get("id"),
@@ -310,8 +362,8 @@ def write_row_to_csv(writer: object, building_data: json):
             building_data.get("address1"),
             building_data.get("postal_code"),
             building_data.get("city_name"),
-            building_data.get("location").get("lng"),
-            building_data.get("location").get("lat"),
+            longitude,
+            latitude,
             building_data.get("property_type"),
             building_data.get("url"),
             building_data.get("pet_friendly"),
@@ -327,6 +379,9 @@ def write_row_to_csv(writer: object, building_data: json):
         # For each amenity, add True if the amenity is in the building's amenities, else add an empty string
         for amenity in AMENITIES:
             row.append(True if amenity in [a.get("name") for a in building_data.get("amenities")] else "")
+
+        # Add neighborhood scores
+        row += [neighborhood_scores[key] for key in NEIGHBORHOOD_SCORES]
 
         writer.writerow(row)
 
@@ -362,7 +417,7 @@ def data_pipeline(
         writer = csv.writer(file)
 
         # Write the header row
-        writer.writerow(ATTRIBUTES + AMENITIES)
+        writer.writerow(ATTRIBUTES + AMENITIES + NEIGHBORHOOD_SCORES)
 
         buildings = []
         for main_url in main_urls:
@@ -378,6 +433,9 @@ def data_pipeline(
                 print(url)
         else:
             print("\n\nAll URLs fetched successfully!")
+
+        if n_missing_neighborhood_scores:
+            print(f"\n\nNumber of missing neighborhood scores: {n_missing_neighborhood_scores}")
 
 
 def process_amenities(csv_file_raw: str, csv_file_processed: str):
