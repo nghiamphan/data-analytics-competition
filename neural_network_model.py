@@ -33,6 +33,8 @@ INPUT_COLUMNS = [
     "underground_parking",
 ]
 
+HALIFAX = ["Halifax", "Bedford", "Dartmouth"]
+
 SEED = 1234
 
 gv_input_scaler = MinMaxScaler()
@@ -42,27 +44,40 @@ gv_n_postal_codes_first_3 = 0
 gv_n_postal_codes = 0
 
 
-def setup_data():
-    input, target = process_data()
+def setup_data(
+    df: pd.DataFrame,
+    is_halifax_only: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
 
-    print("Number of samples:", len(input), "\n")
+    # Split the data into training and test sets
+    df_halifax = df[df["city"].isin(HALIFAX)]
 
-    input = torch.tensor(input.values, dtype=torch.float32)
-    target = torch.tensor(target.values, dtype=torch.float32)
+    if is_halifax_only:
+        test_size = 0.2
+        df_train, df_test = train_test_split(df_halifax, test_size=test_size, random_state=SEED)
+    else:
+        test_size = 0.5
+        _, df_test = train_test_split(df_halifax, test_size=test_size, random_state=SEED)
+        df_train = df[~df.index.isin(df_train.index)]
 
-    # Split the dataset
-    input_train, input_test, target_train, target_test = train_test_split(
-        input, target, test_size=0.2, random_state=SEED
-    )
+    input_train = df_train[INPUT_COLUMNS + NEIGHBORHOOD_SCORES]
+    target_train = df_train["rent"]
+    input_test = df_test[INPUT_COLUMNS + NEIGHBORHOOD_SCORES]
+    target_test = df_test["rent"]
 
-    # return dataloader, input_test, target_test
+    print("Number of samples in the training set:", len(input_train))
+    print("Number of samples in the test set:", len(input_test))
+
+    input_train = torch.tensor(input_train.values, dtype=torch.float32)
+    target_train = torch.tensor(target_train.values, dtype=torch.float32).unsqueeze(1)
+    input_test = torch.tensor(input_test.values, dtype=torch.float32)
+    target_test = torch.tensor(target_test.values, dtype=torch.float32).unsqueeze(1)
+
     return input_train, target_train, input_test, target_test
 
 
-def process_data(raw_csv: str = CSV_FILE_PROCESSED):
+def process_data(raw_csv: str = CSV_FILE_PROCESSED) -> pd.DataFrame:
     df = pd.read_csv(raw_csv)
-
-    # df = df[df["city"] == "Ottawa"]
 
     # Filter apartments
     df = df[df["property_type"] == "apartment"]
@@ -97,7 +112,7 @@ def process_data(raw_csv: str = CSV_FILE_PROCESSED):
     # Save the data which will be used for the model to a new CSV file
     df.to_csv("data/units_info_for_model.csv", index=False)
 
-    df_halifax = df[df["city"] == "Halifax"]
+    df_halifax = df[df["city"].isin(HALIFAX)]
     df_halifax.to_csv("data/units_info_for_model_halifax.csv", index=False)
 
     # Normalize the 'beds', 'baths' and 'area' columns
@@ -106,9 +121,7 @@ def process_data(raw_csv: str = CSV_FILE_PROCESSED):
     # Normalize the 'rent' column
     df["rent"] = gv_rent_scaler.fit_transform(df[["rent"]])
 
-    input = df[INPUT_COLUMNS + NEIGHBORHOOD_SCORES]
-    target = df["rent"]
-    return input, target
+    return df
 
 
 def process_missing_area(df: pd.DataFrame):
@@ -140,8 +153,8 @@ class NeuralNetwork(nn.Module):
         self,
         input_dim: int,
         n_hidden_layers: int = 1,
-        hidden_dim: int = 64,
-        use_postal_code: bool = True,
+        hidden_dim: int = 256,
+        use_postal_code: bool = False,
         postal_code_first_3_dim: int = 4,
         postal_code_dim: int = 2,
         n_postal_codes_first_3: int = 1000,
@@ -156,6 +169,14 @@ class NeuralNetwork(nn.Module):
 
         self.use_postal_code = use_postal_code
         if use_postal_code:
+            global gv_n_postal_codes_first_3
+            global gv_n_postal_codes
+
+            if gv_n_postal_codes_first_3 > 0:
+                n_postal_codes_first_3 = gv_n_postal_codes_first_3
+            if gv_n_postal_codes > 0:
+                n_postal_codes = gv_n_postal_codes
+
             self.postal_code_embedding_first_3 = nn.Embedding(n_postal_codes_first_3, postal_code_first_3_dim)
             self.postal_code_embedding = nn.Embedding(n_postal_codes, postal_code_dim)
             input_dim += postal_code_first_3_dim + postal_code_dim - 2
@@ -215,7 +236,7 @@ class NeuralNetwork(nn.Module):
             for input_batch, target_batch in dataloader:
 
                 input_batch = input_batch.to(self.device)
-                target_batch = target_batch.to(self.device).unsqueeze(1)
+                target_batch = target_batch.to(self.device)
 
                 optimizer.zero_grad()
                 prediction = self(input_batch)
@@ -231,7 +252,7 @@ class NeuralNetwork(nn.Module):
         self.eval()
         with torch.no_grad():
             input_test = input_test.to(self.device)
-            target_test = target_test.to(self.device).unsqueeze(1)
+            target_test = target_test.to(self.device)
 
             prediction = self(input_test)
             loss = nn.MSELoss()(prediction, target_test)
@@ -247,7 +268,7 @@ def objective(
 ) -> float:
 
     n_hidden_layers = trial.suggest_int("n_hidden_layers", 0, 5)
-    hidden_dim = trial.suggest_categorical("hidden_dim", [32, 64, 128, 256, 512, 1024])
+    hidden_dim = trial.suggest_categorical("hidden_dim", [64, 128, 256, 512, 1024])
     use_postal_code = trial.suggest_categorical("use_postal_code", [True, False])
     postal_code_first_3_dim = trial.suggest_categorical("postal_code_first_3_dim", [2, 4, 8, 16])
     postal_code_dim = trial.suggest_categorical("postal_code_dim", [2, 4, 8, 16])
@@ -264,8 +285,6 @@ def objective(
         use_postal_code=use_postal_code,
         postal_code_first_3_dim=postal_code_first_3_dim,
         postal_code_dim=postal_code_dim,
-        n_postal_codes_first_3=gv_n_postal_codes_first_3,
-        n_postal_codes=gv_n_postal_codes,
     )
 
     model.train_model(input_train, target_train, epochs)
@@ -324,7 +343,9 @@ def print_result(input_test: torch.Tensor, target_test: torch.Tensor, prediction
 
 
 def main():
-    input_train, target_train, input_test, target_test = setup_data()
+    df = process_data()
+
+    input_train, target_train, input_test, target_test = setup_data(df, is_halifax_only=True)
 
     best_params = model_tuning(input_train, target_train, epochs=100, n_trials=20)
 
@@ -332,8 +353,6 @@ def main():
 
     model = NeuralNetwork(
         input_train.shape[1],
-        n_postal_codes_first_3=gv_n_postal_codes_first_3,
-        n_postal_codes=gv_n_postal_codes,
         **best_params,
     )
 
