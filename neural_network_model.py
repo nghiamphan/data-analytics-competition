@@ -12,12 +12,15 @@ from rentals_ca_scraper import NEIGHBORHOOD_SCORES
 
 CSV_FILE_PROCESSED = "./data/units_info_processed.csv"
 
-INPUT_COLUMNS = [
+ESSENTIAL_COLUMNS = [
     "postal_code_first_3_idx",
     "postal_code_idx",
     "beds",
     "baths",
     "area",
+] + NEIGHBORHOOD_SCORES
+
+ADDITIONAL_COLUMNS = [
     "studio",
     "pet_friendly",
     "furnished",
@@ -45,35 +48,46 @@ gv_n_postal_codes = 0
 
 
 def setup_data(
-    df: pd.DataFrame,
-    is_halifax_only: bool = False,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    df: pd.DataFrame, is_halifax_only: bool = False, input_columns: list = ESSENTIAL_COLUMNS + ADDITIONAL_COLUMNS
+) -> tuple:
 
     # Split the data into training and test sets
     df_halifax = df[df["city"].isin(HALIFAX)]
 
     if is_halifax_only:
-        test_size = 0.2
-        df_train, df_test = train_test_split(df_halifax, test_size=test_size, random_state=SEED)
-    else:
-        test_size = 0.5
-        _, df_test = train_test_split(df_halifax, test_size=test_size, random_state=SEED)
-        df_train = df[~df.index.isin(df_train.index)]
+        # train 60%, validation 10%, test 30%
+        df_train, df_temp = train_test_split(df_halifax, test_size=0.4, random_state=SEED)
+        df_val, df_test = train_test_split(df_temp, test_size=0.75, random_state=SEED)
 
-    input_train = df_train[INPUT_COLUMNS + NEIGHBORHOOD_SCORES]
+        assert len(df_train) + len(df_val) + len(df_test) == len(df_halifax)
+    else:
+        # train: 60% halifax + other cities, validation: 10% halifax, test: 30% halifax
+        _, df_temp = train_test_split(df_halifax, test_size=0.4, random_state=SEED)
+        df_val, df_test = train_test_split(df_temp, test_size=0.75, random_state=SEED)
+        df_train = df[~df.index.isin(df_val.index.union(df_test.index))]
+
+        assert len(df_train) + len(df_val) + len(df_test) == len(df)
+
+    input_train = df_train[input_columns]
     target_train = df_train["rent"]
-    input_test = df_test[INPUT_COLUMNS + NEIGHBORHOOD_SCORES]
+    input_val = df_val[input_columns]
+    target_val = df_val["rent"]
+    input_test = df_test[input_columns]
     target_test = df_test["rent"]
 
-    print("Number of samples in the training set:", len(input_train))
+    print("\nNumber of samples in the training set:", len(input_train))
+    print("Number of samples in the validation set:", len(input_val))
     print("Number of samples in the test set:", len(input_test))
 
+    # Convert the data to PyTorch tensors
     input_train = torch.tensor(input_train.values, dtype=torch.float32)
     target_train = torch.tensor(target_train.values, dtype=torch.float32).unsqueeze(1)
+    input_val = torch.tensor(input_val.values, dtype=torch.float32)
+    target_val = torch.tensor(target_val.values, dtype=torch.float32).unsqueeze(1)
     input_test = torch.tensor(input_test.values, dtype=torch.float32)
     target_test = torch.tensor(target_test.values, dtype=torch.float32).unsqueeze(1)
 
-    return input_train, target_train, input_test, target_test
+    return input_train, target_train, input_val, target_val, input_test, target_test
 
 
 def process_data(raw_csv: str = CSV_FILE_PROCESSED) -> pd.DataFrame:
@@ -262,10 +276,16 @@ class NeuralNetwork(nn.Module):
 
 def objective(
     trial,
-    input_train: torch.Tensor,
-    target_train: torch.Tensor,
+    df: pd.DataFrame,
     epochs: int,
 ) -> float:
+
+    is_halifax_only = trial.suggest_categorical("is_halifax_only", [True, False])
+
+    chosen_features = []
+    for i in range(len(ADDITIONAL_COLUMNS)):
+        if trial.suggest_categorical(f"feature_{ADDITIONAL_COLUMNS[i]}", [True, False]):
+            chosen_features.append(ADDITIONAL_COLUMNS[i])
 
     n_hidden_layers = trial.suggest_int("n_hidden_layers", 0, 5)
     hidden_dim = trial.suggest_categorical("hidden_dim", [64, 128, 256, 512, 1024])
@@ -273,10 +293,7 @@ def objective(
     postal_code_first_3_dim = trial.suggest_categorical("postal_code_first_3_dim", [2, 4, 8, 16])
     postal_code_dim = trial.suggest_categorical("postal_code_dim", [2, 4, 8, 16])
 
-    # Split the training set into a training and validation set
-    input_train, input_val, target_train, target_val = train_test_split(
-        input_train, target_train, test_size=0.2, random_state=SEED
-    )
+    input_train, target_train, input_val, target_val, _, _ = setup_data(df, is_halifax_only=is_halifax_only)
 
     model = NeuralNetwork(
         input_train.shape[1],
@@ -293,21 +310,25 @@ def objective(
 
 
 def model_tuning(
-    input_train: torch.Tensor,
-    target_train: torch.Tensor,
+    df: pd.DataFrame,
     epochs: int,
     n_trials: int,
 ) -> dict[str, float]:
     study = optuna.create_study(direction="minimize")
     study.optimize(
-        lambda trial: objective(trial, input_train, target_train, epochs),
+        lambda trial: objective(trial, df, epochs),
         n_trials=n_trials,
     )
 
     return study.best_params
 
 
-def print_result(input_test: torch.Tensor, target_test: torch.Tensor, prediction: torch.Tensor):
+def print_result(
+    input_test: torch.Tensor,
+    target_test: torch.Tensor,
+    prediction: torch.Tensor,
+    addtional_columns: list = ADDITIONAL_COLUMNS,
+):
     # Convert tensors to numpy arrays and reshape
     input_test_np = input_test.cpu().numpy().reshape(-1, input_test.shape[1])
 
@@ -316,7 +337,7 @@ def print_result(input_test: torch.Tensor, target_test: torch.Tensor, prediction
 
     residual = prediction_np - target_test_np
 
-    df_input_test = pd.DataFrame(input_test_np, columns=INPUT_COLUMNS + NEIGHBORHOOD_SCORES)
+    df_input_test = pd.DataFrame(input_test_np, columns=ESSENTIAL_COLUMNS + addtional_columns)
     df_input_test[["beds", "baths", "area"]] = gv_input_scaler.inverse_transform(
         df_input_test[["beds", "baths", "area"]]
     )
@@ -345,22 +366,35 @@ def print_result(input_test: torch.Tensor, target_test: torch.Tensor, prediction
 def main():
     df = process_data()
 
-    input_train, target_train, input_test, target_test = setup_data(df, is_halifax_only=True)
-
-    best_params = model_tuning(input_train, target_train, epochs=100, n_trials=20)
+    best_params = model_tuning(df, epochs=100, n_trials=1)
 
     print("\nBest parameters:", best_params)
 
+    additional_columns = []
+    for column in ADDITIONAL_COLUMNS:
+        if best_params[f"feature_{column}"]:
+            additional_columns.append(column)
+
+    input_train, target_train, _, _, input_test, target_test = setup_data(
+        df,
+        is_halifax_only=best_params["is_halifax_only"],
+        input_columns=ESSENTIAL_COLUMNS + additional_columns,
+    )
+
     model = NeuralNetwork(
         input_train.shape[1],
-        **best_params,
+        n_hidden_layers=best_params["n_hidden_layers"],
+        hidden_dim=best_params["hidden_dim"],
+        use_postal_code=best_params["use_postal_code"],
+        postal_code_first_3_dim=best_params["postal_code_first_3_dim"],
+        postal_code_dim=best_params["postal_code_dim"],
     )
 
     model.train_model(input_train, target_train, epochs=200, print_loss=True)
 
     test_loss, prediction = model.evaluate(input_test, target_test)
     print("Test Loss:", test_loss)
-    print_result(input_test, target_test, prediction)
+    print_result(input_test, target_test, prediction, additional_columns)
 
 
 if __name__ == "__main__":
