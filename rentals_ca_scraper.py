@@ -311,6 +311,16 @@ def fetch_main_page(main_page_url: str, writer: object, write_to_json: bool = Fa
 
 
 def write_row_to_csv(writer: object, building_data: json):
+    """
+    Write the unit's detail of the fetched building data into a csv file.
+
+    Parameters
+    ----------
+    writer : csv.writer
+        The CSV writer object.
+    building_data : json
+        The building data.
+    """
     global n_missing_neighborhood_scores
 
     company = building_data.get("company")
@@ -434,20 +444,19 @@ def data_pipeline(
         else:
             print("\n\nAll URLs fetched successfully!")
 
-        if n_missing_neighborhood_scores:
-            print(f"\n\nNumber of missing neighborhood scores: {n_missing_neighborhood_scores}")
+        print(f"\n\nNumber of missing neighborhood scores: {n_missing_neighborhood_scores}")
 
 
 def process_amenities(csv_file_raw: str, csv_file_processed: str):
     """
-    Condense the amenities columns into a single column for each amenity.
+    Combine the amenity columns into a single column for each amenity.
 
     Parameters
     ----------
     csv_file_raw : str
         The path to the raw CSV file.
     csv_file_processed : str
-        The path to the processed CSV file where the amenities columns are condensed.
+        The path to the processed CSV file where the amenity columns are combined.
     """
     df = pd.read_csv(csv_file_raw)
 

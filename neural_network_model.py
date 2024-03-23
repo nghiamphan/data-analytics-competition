@@ -48,9 +48,31 @@ gv_n_postal_codes = 0
 
 
 def setup_data(
-    df: pd.DataFrame, is_halifax_only: bool = False, input_columns: list = ESSENTIAL_COLUMNS + ADDITIONAL_COLUMNS
+    df: pd.DataFrame,
+    is_halifax_only: bool = False,
+    input_columns: list[str] = ESSENTIAL_COLUMNS + ADDITIONAL_COLUMNS,
 ) -> tuple:
+    """
+    Split the data into training, validation and test sets.
 
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The DataFrame containing the data.
+    is_halifax_only : bool
+        If True, only use the data from Halifax, Bedford and Dartmouth. Default: False.
+    input_columns : list[str]
+        The columns to use as input features.
+
+    Returns
+    -------
+    input_train : torch.Tensor
+    target_train : torch.Tensor
+    input_val : torch.Tensor
+    target_val : torch.Tensor
+    input_test : torch.Tensor
+    target_test : torch.Tensor
+    """
     # Split the data into training and test sets
     df_halifax = df[df["city"].isin(HALIFAX)]
 
@@ -91,6 +113,19 @@ def setup_data(
 
 
 def process_data(raw_csv: str = CSV_FILE_PROCESSED) -> pd.DataFrame:
+    """
+    Process the raw data before feeding them into the model.
+
+    Parameters
+    ----------
+    raw_csv : str
+        The path to the raw CSV file.
+
+    Returns
+    -------
+    df : pd.DataFrame
+        The processed DataFrame.
+    """
     df = pd.read_csv(raw_csv)
 
     # Filter apartments
@@ -139,6 +174,9 @@ def process_data(raw_csv: str = CSV_FILE_PROCESSED) -> pd.DataFrame:
 
 
 def process_missing_area(df: pd.DataFrame):
+    """
+    Estimate the missing values in the 'area' column. Change the values in-place for the DataFrame parameter.
+    """
     # Calculate the mean 'areas' for each group of 'beds' and 'baths'
     df["mean_area"] = df[(df["area"] != 0) & (df["area"].notna())].groupby(["beds", "baths"])["area"].transform("mean")
 
@@ -174,6 +212,26 @@ class NeuralNetwork(nn.Module):
         n_postal_codes_first_3: int = 1000,
         n_postal_codes: int = 2000,
     ):
+        """
+        Parameters
+        ----------
+        input_dim : int
+            The number of input features.
+        n_hidden_layers : int
+            The number of hidden layers. Default: 1.
+        hidden_dim : int
+            The number of neurons in each hidden layer. Default: 256.
+        use_postal_code : bool
+            If True, use the postal code columns as an input feature. Default: False.
+        postal_code_first_3_dim : int
+            The dimension of the postal code embedding for the first 3 characters. Default: 4.
+        postal_code_dim : int
+            The dimension of the postal code embedding. Default: 2.
+        n_postal_codes_first_3 : int
+            The number of unique postal codes for the first 3 characters. Default: 1000.
+        n_postal_codes : int
+            The number of unique postal codes. Default: 2000.
+        """
         super(NeuralNetwork, self).__init__()
 
         if torch.cuda.is_available():
@@ -275,11 +333,27 @@ class NeuralNetwork(nn.Module):
 
 
 def objective(
-    trial,
+    trial: optuna.Trial,
     df: pd.DataFrame,
     epochs: int,
 ) -> float:
+    """
+    Objective function for optuna.
 
+    Parameters
+    ----------
+    trial : optuna.Trial
+        The trial object.
+    df : pd.DataFrame
+        The DataFrame containing the data.
+    epochs : int
+        The number of epochs to train the model.
+
+    Returns
+    -------
+    mse : float
+        The mean squared error of the model on the validation set.
+    """
     is_halifax_only = trial.suggest_categorical("is_halifax_only", [True, False])
 
     chosen_features = []
@@ -314,6 +388,23 @@ def model_tuning(
     epochs: int,
     n_trials: int,
 ) -> dict[str, float]:
+    """
+    Tune the data selection and hyperparameters of the model.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The DataFrame containing the data.
+    epochs : int
+        The number of epochs to train the model in each trial.
+    n_trials : int
+        The number of experiments to run.
+
+    Returns
+    -------
+    best_params : dict[str, float]
+        The best parameters found by optuna.
+    """
     study = optuna.create_study(direction="minimize")
     study.optimize(
         lambda trial: objective(trial, df, epochs),
