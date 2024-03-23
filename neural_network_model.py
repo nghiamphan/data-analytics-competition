@@ -10,6 +10,7 @@ from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import DataLoader, TensorDataset
 from rentals_ca_scraper import NEIGHBORHOOD_SCORES
 
+# The file contains the data that was lightly processed. It is the final output file from rentals_ca_scraper.py
 CSV_FILE_PROCESSED = "./data/units_info_processed.csv"
 
 ESSENTIAL_COLUMNS = [
@@ -112,21 +113,21 @@ def setup_data(
     return input_train, target_train, input_val, target_val, input_test, target_test
 
 
-def process_data(raw_csv: str = CSV_FILE_PROCESSED) -> pd.DataFrame:
+def process_data(csv: str = CSV_FILE_PROCESSED) -> pd.DataFrame:
     """
-    Process the raw data before feeding them into the model.
+    Process the data before feeding them into the model.
 
     Parameters
     ----------
-    raw_csv : str
-        The path to the raw CSV file.
+    csv : str
+        The path to the CSV file. This file should be the final output file from rentals_ca_scraper.py.
 
     Returns
     -------
     df : pd.DataFrame
         The processed DataFrame.
     """
-    df = pd.read_csv(raw_csv)
+    df = pd.read_csv(csv)
 
     # Filter apartments
     df = df[df["property_type"] == "apartment"]
