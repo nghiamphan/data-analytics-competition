@@ -67,8 +67,11 @@ def process_data(raw_csv: str = CSV_FILE_PROCESSED):
     # Filter apartments
     df = df[df["property_type"] == "apartment"]
 
+    # Filter out units with 0 baths
+    df = df[df["baths"] > 0]
+
     # Process the 'area' column
-    df.loc[df["area"] < 300, "area"] = 0
+    df = df[~((df["area"] > 0) & (df["area"] < 350))]
 
     process_missing_area(df)
     df = df[(df["area"].notna()) & (df["area"] != 0) & (df["rent"].notna()) & (df["rent"] != 0)]
@@ -79,7 +82,7 @@ def process_data(raw_csv: str = CSV_FILE_PROCESSED):
 
     # Remove outliers based on the rent-to-area ratio
     df["rent_to_unit_area_ratio"] = df["rent"] / df["area"]
-    df = df[(df["rent_to_unit_area_ratio"] > 1.5) & (df["rent_to_unit_area_ratio"] < 4)]
+    df = df[(df["rent_to_unit_area_ratio"] > 1.5) & (df["rent_to_unit_area_ratio"] < 6)]
 
     # Convert postal_code to category and then to its corresponding codes
     df = df[df["postal_code"].notna()]
@@ -91,17 +94,17 @@ def process_data(raw_csv: str = CSV_FILE_PROCESSED):
     gv_n_postal_codes_first_3 = df["postal_code_first_3_idx"].nunique()
     gv_n_postal_codes = df["postal_code_idx"].nunique()
 
-    # Normalize the 'beds', 'baths' and 'area' columns
-    df[["beds", "baths", "area"]] = gv_input_scaler.fit_transform(df[["beds", "baths", "area"]])
-
-    # Normalize the 'rent' column
-    df["rent"] = gv_rent_scaler.fit_transform(df[["rent"]])
-
     # Save the data which will be used for the model to a new CSV file
     df.to_csv("data/units_info_for_model.csv", index=False)
 
     df_halifax = df[df["city"] == "Halifax"]
     df_halifax.to_csv("data/units_info_for_model_halifax.csv", index=False)
+
+    # Normalize the 'beds', 'baths' and 'area' columns
+    df[["beds", "baths", "area"]] = gv_input_scaler.fit_transform(df[["beds", "baths", "area"]])
+
+    # Normalize the 'rent' column
+    df["rent"] = gv_rent_scaler.fit_transform(df[["rent"]])
 
     input = df[INPUT_COLUMNS + NEIGHBORHOOD_SCORES]
     target = df["rent"]
