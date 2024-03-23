@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import DataLoader, TensorDataset
+from rentals_ca_scraper import NEIGHBORHOOD_SCORES
 
 CSV_FILE_PROCESSED = "./data/units_info_processed.csv"
 
@@ -32,6 +33,8 @@ INPUT_COLUMNS = [
     "underground_parking",
 ]
 
+SEED = 1234
+
 gv_input_scaler = MinMaxScaler()
 gv_rent_scaler = MinMaxScaler()
 
@@ -48,10 +51,9 @@ def setup_data():
     target = torch.tensor(target.values, dtype=torch.float32)
 
     # Split the dataset
-    input_train, input_test, target_train, target_test = train_test_split(input, target, test_size=0.2, random_state=42)
-
-    # Create TensorDatasets for the training set
-    train_dataset = TensorDataset(input_train, target_train)
+    input_train, input_test, target_train, target_test = train_test_split(
+        input, target, test_size=0.2, random_state=SEED
+    )
 
     # return dataloader, input_test, target_test
     return input_train, target_train, input_test, target_test
@@ -77,7 +79,7 @@ def process_data(raw_csv: str = CSV_FILE_PROCESSED):
 
     # Remove outliers based on the rent-to-area ratio
     df["rent_to_unit_area_ratio"] = df["rent"] / df["area"]
-    df = df[(df["rent_to_unit_area_ratio"] > 1) & (df["rent_to_unit_area_ratio"] < 4)]
+    df = df[(df["rent_to_unit_area_ratio"] > 1.5) & (df["rent_to_unit_area_ratio"] < 4)]
 
     # Convert postal_code to category and then to its corresponding codes
     df = df[df["postal_code"].notna()]
@@ -101,7 +103,7 @@ def process_data(raw_csv: str = CSV_FILE_PROCESSED):
     df_halifax = df[df["city"] == "Halifax"]
     df_halifax.to_csv("data/units_info_for_model_halifax.csv", index=False)
 
-    input = df[INPUT_COLUMNS]
+    input = df[INPUT_COLUMNS + NEIGHBORHOOD_SCORES]
     target = df["rent"]
     return input, target
 
@@ -233,12 +235,14 @@ def objective(
 ) -> float:
 
     n_hidden_layers = trial.suggest_int("n_hidden_layers", 0, 5)
-    hidden_dim = trial.suggest_categorical("hidden_dim", [32, 64, 128, 256])
+    hidden_dim = trial.suggest_categorical("hidden_dim", [32, 64, 128, 256, 512, 1024])
     postal_code_first_3_dim = trial.suggest_categorical("postal_code_first_3_dim", [2, 4, 8, 16])
     postal_code_dim = trial.suggest_categorical("postal_code_dim", [2, 4, 8, 16])
 
     # Split the training set into a training and validation set
-    input_train, input_val, target_train, target_val = train_test_split(input_train, target_train, test_size=0.2)
+    input_train, input_val, target_train, target_val = train_test_split(
+        input_train, target_train, test_size=0.2, random_state=SEED
+    )
 
     model = NeuralNetwork(
         input_train.shape[1],
@@ -279,7 +283,7 @@ def print_result(input_test: torch.Tensor, target_test: torch.Tensor, prediction
 
     residual = prediction_np - target_test_np
 
-    df_input_test = pd.DataFrame(input_test_np, columns=INPUT_COLUMNS)
+    df_input_test = pd.DataFrame(input_test_np, columns=INPUT_COLUMNS + NEIGHBORHOOD_SCORES)
     df_input_test[["beds", "baths", "area"]] = gv_input_scaler.inverse_transform(
         df_input_test[["beds", "baths", "area"]]
     )
