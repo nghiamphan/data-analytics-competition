@@ -138,6 +138,7 @@ class NeuralNetwork(nn.Module):
         input_dim: int,
         n_hidden_layers: int = 1,
         hidden_dim: int = 64,
+        use_postal_code: bool = True,
         postal_code_first_3_dim: int = 4,
         postal_code_dim: int = 2,
         n_postal_codes_first_3: int = 1000,
@@ -150,14 +151,19 @@ class NeuralNetwork(nn.Module):
         else:
             self.device = torch.device("cpu")
 
-        self.postal_code_embedding_first_3 = nn.Embedding(n_postal_codes_first_3, postal_code_first_3_dim)
-        self.postal_code_embedding = nn.Embedding(n_postal_codes, postal_code_dim)
+        self.use_postal_code = use_postal_code
+        if use_postal_code:
+            self.postal_code_embedding_first_3 = nn.Embedding(n_postal_codes_first_3, postal_code_first_3_dim)
+            self.postal_code_embedding = nn.Embedding(n_postal_codes, postal_code_dim)
+            input_dim += postal_code_first_3_dim + postal_code_dim - 2
+        else:
+            input_dim -= 2
 
         if n_hidden_layers == 0:
-            self.feed_forward = nn.Linear(input_dim + postal_code_first_3_dim + postal_code_dim - 2, 1)
+            self.feed_forward = nn.Linear(input_dim, 1)
         else:
             self.feed_forward = nn.Sequential(
-                nn.Linear(input_dim + postal_code_first_3_dim + postal_code_dim - 2, hidden_dim),
+                nn.Linear(input_dim, hidden_dim),
                 nn.ReLU(),
             )
 
@@ -170,17 +176,20 @@ class NeuralNetwork(nn.Module):
         self.to(self.device)
 
     def forward(self, x: torch.Tensor):
-        # Split the input into the postal code and other features
-        postal_code_first_3 = x[:, 0].long()
-        postal_code = x[:, 1].long()
-        other_features = x[:, 2:]
+        if self.use_postal_code:
+            # Split the input into the postal code and other features
+            postal_code_first_3 = x[:, 0].long()
+            postal_code = x[:, 1].long()
+            other_features = x[:, 2:]
 
-        # Embed the postal codes
-        postal_code_first_3 = self.postal_code_embedding_first_3(postal_code_first_3)
-        postal_code = self.postal_code_embedding(postal_code)
+            # Embed the postal codes
+            postal_code_first_3 = self.postal_code_embedding_first_3(postal_code_first_3)
+            postal_code = self.postal_code_embedding(postal_code)
 
-        # Concatenate the embeddings with the other features
-        x = torch.cat((postal_code_first_3, postal_code, other_features), dim=1)
+            # Concatenate the embeddings with the other features
+            x = torch.cat((postal_code_first_3, postal_code, other_features), dim=1)
+        else:
+            x = x[:, 2:]
 
         out = self.feed_forward(x)
         return out
@@ -236,6 +245,7 @@ def objective(
 
     n_hidden_layers = trial.suggest_int("n_hidden_layers", 0, 5)
     hidden_dim = trial.suggest_categorical("hidden_dim", [32, 64, 128, 256, 512, 1024])
+    use_postal_code = trial.suggest_categorical("use_postal_code", [True, False])
     postal_code_first_3_dim = trial.suggest_categorical("postal_code_first_3_dim", [2, 4, 8, 16])
     postal_code_dim = trial.suggest_categorical("postal_code_dim", [2, 4, 8, 16])
 
@@ -248,6 +258,7 @@ def objective(
         input_train.shape[1],
         n_hidden_layers=n_hidden_layers,
         hidden_dim=hidden_dim,
+        use_postal_code=use_postal_code,
         postal_code_first_3_dim=postal_code_first_3_dim,
         postal_code_dim=postal_code_dim,
         n_postal_codes_first_3=gv_n_postal_codes_first_3,
