@@ -30,7 +30,7 @@ with open("saved_model/best_params.json", "r") as f:
 
 input_scaler = joblib.load("saved_model/input_scaler.pkl")
 rent_scaler = joblib.load("saved_model/rent_scaler.pkl")
-model = joblib.load("saved_model/nn_model.pkl")
+model = torch.load("saved_model/nn_model.pt", map_location=torch.device("cpu"))
 
 
 def fetch_address_info(text: str):
@@ -179,12 +179,6 @@ def predict_rent(input_tensor: torch.Tensor):
     global model
 
     if input_tensor != None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = model.to(device)
-        input_tensor = input_tensor.to(device)
-
-        rent_scaler = joblib.load("saved_model/rent_scaler.pkl")
-
         prediction = model(input_tensor).item()
         prediction = rent_scaler.inverse_transform([[prediction]])[0][0]
 

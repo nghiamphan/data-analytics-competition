@@ -486,10 +486,14 @@ def print_result(
     plt.show()
 
 
-def main():
+def main(tune_model: bool = True):
     df = process_data()
 
-    best_params = model_tuning(df, epochs=25, n_trials=200)
+    if tune_model:
+        best_params = model_tuning(df, epochs=25, n_trials=200)
+    else:
+        with open("saved_model/best_params.json", "r") as f:
+            best_params = json.load(f)
 
     print("\nBest parameters:", best_params)
 
@@ -513,10 +517,10 @@ def main():
         postal_code_dim=best_params["postal_code_dim"],
     )
 
-    model.train_model(input_train, target_train, epochs=100, print_loss=True)
+    model.train_model(input_train, target_train, epochs=200, print_loss=True)
 
     # Save the model
-    joblib.dump(model, "saved_model/nn_model.pkl")
+    torch.save(model, "saved_model/nn_model.pt")
 
     test_loss, prediction = model.evaluate(input_test, target_test)
     print("Test Loss:", test_loss)
@@ -524,4 +528,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(tune_model=False)
