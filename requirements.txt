@@ -1,4 +1,5 @@
 cloudscraper
+joblib
 optuna
 pandas
 python-dotenv

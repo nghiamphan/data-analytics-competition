@@ -1,0 +1,21 @@
+{
+    "is_halifax_only": false,
+    "feature_studio": false,
+    "feature_pet_friendly": true,
+    "feature_furnished": false,
+    "feature_fitness_center": false,
+    "feature_swimming_pool": true,
+    "feature_recreation_room": false,
+    "feature_heating": true,
+    "feature_water": true,
+    "feature_internet": false,
+    "feature_ensuite_laundry": true,
+    "feature_laundry_room": false,
+    "feature_parking": false,
+    "feature_underground_parking": true,
+    "n_hidden_layers": 5,
+    "hidden_dim": 1024,
+    "use_postal_code": false,
+    "postal_code_first_3_dim": 2,
+    "postal_code_dim": 2
+}

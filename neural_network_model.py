@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch.optim as optim
 import optuna
 import matplotlib.pyplot as plt
+import joblib
+import json
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
@@ -87,7 +89,9 @@ def setup_data(
         # train: 60% halifax + other cities, validation: 10% halifax, test: 30% halifax
         _, df_temp = train_test_split(df_halifax, test_size=0.4, random_state=SEED)
         df_val, df_test = train_test_split(df_temp, test_size=0.75, random_state=SEED)
+
         df_train = df[~df.index.isin(df_val.index.union(df_test.index))]
+        df_train = df_train.sample(frac=1, random_state=SEED)
 
         assert len(df_train) + len(df_val) + len(df_test) == len(df)
 
@@ -151,8 +155,20 @@ def process_data(csv: str = CSV_FILE_PROCESSED) -> pd.DataFrame:
 
     # Convert postal_code to category and then to its corresponding codes
     df = df[df["postal_code"].notna()]
-    df["postal_code_first_3_idx"] = df["postal_code"].astype(str).str[:3].astype("category").cat.codes
+
+    df["postal_code_first_3"] = df["postal_code"].str[:3]
+    df["postal_code_first_3_idx"] = df["postal_code_first_3"].astype("category").cat.codes
     df["postal_code_idx"] = df["postal_code"].astype("category").cat.codes
+
+    # Create a dictionary mapping postal codes to indices
+    postal_code_idx_mapping = df.set_index("postal_code")["postal_code_idx"].to_dict()
+    postal_code_first_3_idx_mapping = df.set_index("postal_code_first_3")["postal_code_first_3_idx"].to_dict()
+
+    # Save the mapping to a JSON file
+    with open("saved_model/postal_code_idx_mapping.json", "w") as f:
+        json.dump(postal_code_idx_mapping, f, indent=4)
+    with open("saved_model/postal_code_first_3_idx_mapping.json", "w") as f:
+        json.dump(postal_code_first_3_idx_mapping, f, indent=4)
 
     global gv_n_postal_codes_first_3
     global gv_n_postal_codes
@@ -170,6 +186,10 @@ def process_data(csv: str = CSV_FILE_PROCESSED) -> pd.DataFrame:
 
     # Normalize the 'rent' column
     df["rent"] = gv_rent_scaler.fit_transform(df[["rent"]])
+
+    # Save the scalers
+    joblib.dump(gv_input_scaler, "saved_model/input_scaler.pkl")
+    joblib.dump(gv_rent_scaler, "saved_model/rent_scaler.pkl")
 
     return df
 
@@ -379,6 +399,10 @@ def objective(
         postal_code_dim=postal_code_dim,
     )
 
+    # Because Halifax has fewer samples, we need to train the model more for it to converge
+    if is_halifax_only:
+        epochs *= 4
+
     model.train_model(input_train, target_train, epochs)
     mse = model.evaluate(input_val, target_val)[0]
     return mse
@@ -406,11 +430,16 @@ def model_tuning(
     best_params : dict[str, float]
         The best parameters found by optuna.
     """
-    study = optuna.create_study(direction="minimize")
+    study = optuna.create_study(sampler=optuna.samplers.TPESampler(seed=SEED), direction="minimize")
     study.optimize(
         lambda trial: objective(trial, df, epochs),
         n_trials=n_trials,
     )
+
+    # Save the trials and best parameters
+    study.trials_dataframe().to_csv("data/optuna_trials.csv", index=False)
+    with open("saved_model/best_params.json", "w") as f:
+        json.dump(study.best_params, f, indent=4)
 
     return study.best_params
 
@@ -447,18 +476,20 @@ def print_result(
     # Create the plot
     plt.figure(figsize=(10, 6))
     plt.scatter(target_test_np, residual, alpha=0.5)
-    plt.xlabel("Actual")
+    plt.xlabel("Actual Value")
     plt.ylabel("Residual")
     plt.title("Difference between Predictions and Actual Values")
 
     # Show the plot
+    plt.grid(True)
+    plt.savefig("data/residual_plot.png")
     plt.show()
 
 
 def main():
     df = process_data()
 
-    best_params = model_tuning(df, epochs=100, n_trials=1)
+    best_params = model_tuning(df, epochs=25, n_trials=200)
 
     print("\nBest parameters:", best_params)
 
@@ -482,7 +513,10 @@ def main():
         postal_code_dim=best_params["postal_code_dim"],
     )
 
-    model.train_model(input_train, target_train, epochs=200, print_loss=True)
+    model.train_model(input_train, target_train, epochs=100, print_loss=True)
+
+    # Save the model
+    joblib.dump(model, "saved_model/nn_model.pkl")
 
     test_loss, prediction = model.evaluate(input_test, target_test)
     print("Test Loss:", test_loss)
