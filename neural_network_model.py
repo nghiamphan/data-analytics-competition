@@ -89,9 +89,7 @@ def setup_data(
         # train: 60% halifax + other cities, validation: 10% halifax, test: 30% halifax
         _, df_temp = train_test_split(df_halifax, test_size=0.4, random_state=SEED)
         df_val, df_test = train_test_split(df_temp, test_size=0.75, random_state=SEED)
-
         df_train = df[~df.index.isin(df_val.index.union(df_test.index))]
-        df_train = df_train.sample(frac=1, random_state=SEED)
 
         assert len(df_train) + len(df_val) + len(df_test) == len(df)
 
@@ -315,19 +313,49 @@ class NeuralNetwork(nn.Module):
         self,
         input_train: torch.Tensor,
         target_train: torch.Tensor,
+        input_val: torch.Tensor,
+        target_val: torch.Tensor,
         epochs: int,
         batch_size: int = 8,
         lr: float = 1e-5,
+        patience: int = 3,
         print_loss: bool = False,
     ):
-        dataloader = DataLoader(TensorDataset(input_train, target_train), batch_size=batch_size, shuffle=True)
+        """
+        Train the model. Model is trained using Adam optimizer and Mean Squared Error loss.
+        Early stopping is used to prevent overfitting. If the validation loss does not improve for 'patience' epochs, and the epochs is greater than 100, the training will stop.
+
+        Parameters
+        ----------
+        input_train : torch.Tensor
+            The input features of the training set.
+        target_train : torch.Tensor
+            The target values of the training set.
+        input_val : torch.Tensor
+            The input features of the validation set.
+        target_val : torch.Tensor
+            The target values of the validation set.
+        epochs : int
+            The number of epochs to train the model.
+        batch_size : int
+            The batch size for training. Default: 8.
+        lr : float
+            The learning rate for the optimizer. Default: 1e-5.
+        patience : int
+            The number of epochs with no improvement before early stopping. Default: 3.
+        print_loss : bool
+            If True, print the loss every 20 epochs. Default: False.
+        """
+        train_dataloader = DataLoader(TensorDataset(input_train, target_train), batch_size=batch_size, shuffle=True)
 
         criterion = nn.MSELoss()
-        optimizer = optim.Adam(self.parameters(), lr=lr)
+        optimizer = optim.Adam(self.parameters(), lr=lr, weight_decay=1e-5)
+
+        best_val_loss = float("inf")
+        no_improve_epochs = 0  # Number of epochs with no improvement
 
         for epoch in range(1, epochs + 1):
-            for input_batch, target_batch in dataloader:
-
+            for input_batch, target_batch in train_dataloader:
                 input_batch = input_batch.to(self.device)
                 target_batch = target_batch.to(self.device)
 
@@ -338,8 +366,27 @@ class NeuralNetwork(nn.Module):
                 loss.backward()
                 optimizer.step()
 
+            with torch.no_grad():
+                input_val = input_val.to(self.device)
+                target_val = target_val.to(self.device)
+
+                prediction = self(input_val)
+                val_loss = criterion(prediction, target_val)
+
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                no_improve_epochs = 0
+            else:
+                no_improve_epochs += 1
+
+            if epoch >= 100 and no_improve_epochs >= patience:
+                print(f"Early stopping at epoch {epoch}")
+                break
+
             if print_loss and epoch % 20 == 0:
                 print(f"Epoch {epoch}, Loss: {loss.item()}")
+
+        return val_loss.item()
 
     def evaluate(self, input_test: torch.Tensor, target_test: torch.Tensor) -> tuple[float, torch.Tensor]:
         self.eval()
@@ -401,10 +448,9 @@ def objective(
 
     # Because Halifax has fewer samples, we need to train the model more for it to converge
     if is_halifax_only:
-        epochs *= 4
+        epochs = 100
 
-    model.train_model(input_train, target_train, epochs)
-    mse = model.evaluate(input_val, target_val)[0]
+    mse = model.train_model(input_train, target_train, input_val, target_val, epochs)
     return mse
 
 
@@ -430,7 +476,7 @@ def model_tuning(
     best_params : dict[str, float]
         The best parameters found by optuna.
     """
-    study = optuna.create_study(sampler=optuna.samplers.TPESampler(seed=SEED), direction="minimize")
+    study = optuna.create_study(direction="minimize")
     study.optimize(
         lambda trial: objective(trial, df, epochs),
         n_trials=n_trials,
@@ -457,6 +503,9 @@ def print_result(
     target_test_np = gv_rent_scaler.inverse_transform(target_test.cpu().numpy().reshape(-1, 1)).flatten()
 
     residual = prediction_np - target_test_np
+    print("Mean Error:", residual.mean())
+    rmse = (residual**2).mean() ** 0.5
+    print("Root Mean Squared Error:", rmse)
 
     df_input_test = pd.DataFrame(input_test_np, columns=ESSENTIAL_COLUMNS + addtional_columns)
     df_input_test[["beds", "baths", "area"]] = gv_input_scaler.inverse_transform(
@@ -490,7 +539,7 @@ def main(tune_model: bool = True):
     df = process_data()
 
     if tune_model:
-        best_params = model_tuning(df, epochs=25, n_trials=200)
+        best_params = model_tuning(df, epochs=25, n_trials=300)
     else:
         with open("saved_model/best_params.json", "r") as f:
             best_params = json.load(f)
@@ -502,7 +551,7 @@ def main(tune_model: bool = True):
         if best_params[f"feature_{column}"]:
             additional_columns.append(column)
 
-    input_train, target_train, _, _, input_test, target_test = setup_data(
+    input_train, target_train, input_val, target_val, input_test, target_test = setup_data(
         df,
         is_halifax_only=best_params["is_halifax_only"],
         input_columns=ESSENTIAL_COLUMNS + additional_columns,
@@ -517,7 +566,7 @@ def main(tune_model: bool = True):
         postal_code_dim=best_params["postal_code_dim"],
     )
 
-    model.train_model(input_train, target_train, epochs=200, print_loss=True)
+    model.train_model(input_train, target_train, input_val, target_val, epochs=200, print_loss=True)
 
     # Save the model
     torch.save(model, "saved_model/nn_model.pt")
@@ -528,4 +577,4 @@ def main(tune_model: bool = True):
 
 
 if __name__ == "__main__":
-    main(tune_model=False)
+    main(tune_model=True)
