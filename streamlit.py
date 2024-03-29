@@ -113,6 +113,7 @@ def input():
         "Check Address",
         on_click=fetch_address_info,
         args=(address_input,),
+        type="primary",
     )
 
     # Bedroom, Bathroom, Area Input
@@ -123,40 +124,28 @@ def input():
     beds, baths, area = input_scaler.transform([[beds, baths, area]])[0]
 
     # Additional Features
-    st.write("Additional Features")
-    studio = st.checkbox("Is Studio")
-    pet_friendly = st.checkbox("Pets Friendly")
-    furnished = st.checkbox("Furnished")
-    fitness_center = st.checkbox("Fitness Center")
-    swimming_pool = st.checkbox("Swimming Pool")
-    recreation_room = st.checkbox("Recreation Room")
-    heating = st.checkbox("Heating Included")
-    water = st.checkbox("Water Included")
-    internet = st.checkbox("Internet Included")
-    ensuite_laundry = st.checkbox("Ensuite Laundry")
-    laundry_room = st.checkbox("Laundry Room")
-    parking = st.checkbox("Parking")
-    underground_parking = st.checkbox("Underground Parking")
-
     additional_feature_dict = {
-        "feature_studio": studio,
-        "feature_pet_friendly": pet_friendly,
-        "feature_furnished": furnished,
-        "feature_fitness_center": fitness_center,
-        "feature_swimming_pool": swimming_pool,
-        "feature_recreation_room": recreation_room,
-        "feature_heating": heating,
-        "feature_water": water,
-        "feature_internet": internet,
-        "feature_ensuite_laundry": ensuite_laundry,
-        "feature_laundry_room": laundry_room,
-        "feature_parking": parking,
-        "feature_underground_parking": underground_parking,
+        "feature_studio": None,
+        "feature_pet_friendly": None,
+        "feature_furnished": None,
+        "feature_fitness_center": None,
+        "feature_swimming_pool": None,
+        "feature_recreation_room": None,
+        "feature_heating": None,
+        "feature_water": None,
+        "feature_internet": None,
+        "feature_ensuite_laundry": None,
+        "feature_laundry_room": None,
+        "feature_parking": None,
+        "feature_underground_parking": None,
     }
 
+    st.write("Additional Features")
     additional_features = []
     for feature in additional_feature_dict:
         if best_params[feature]:
+            feature_name = feature[8:].replace("_", " ").title()
+            additional_feature_dict[feature] = st.checkbox(feature_name)
             additional_features.append(1 if additional_feature_dict[feature] else 0)
 
     input_tensor = None
@@ -179,6 +168,7 @@ def input():
         "Predict Rent",
         on_click=predict_rent,
         args=(input_tensor,),
+        type="primary",
     )
 
     if "prediction" in st.session_state:
