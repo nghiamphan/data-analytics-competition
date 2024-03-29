@@ -1,5 +1,6 @@
 cloudscraper
 optuna
 pandas
+python-dotenv
 scikit-learn
 torch -f https://download.pytorch.org/whl/cu121

@@ -6,6 +6,10 @@ import os
 import pandas as pd
 import time
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 MAX_ATTEMPTS = 5
 SLEEP_TIME = [0, 1, 2, 3, 4, 5]
 
@@ -135,7 +139,7 @@ NEIGHBORHOOD_SCORES = [
     # "greenery",
 ]
 
-LOCALLOGIC_API_TOKEN = "924b6e5da7d532a96c1360e93618e2cfa8ed204f507e921e6535bbe3a37dfaff381d55fc6ef33e79"
+LOCALLOGIC_API_TOKEN = os.getenv("LOCALLOGIC_API_TOKEN")
 
 OUTPUT_CSV_FILE_RAW = "./data/units_info_raw.csv"
 OUTPUT_CSV_FILE_PROCESSED = "./data/units_info_processed.csv"
