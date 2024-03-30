@@ -316,6 +316,7 @@ class NeuralNetwork(nn.Module):
         input_val: torch.Tensor = None,
         target_val: torch.Tensor = None,
         epochs: int = 100,
+        min_epochs: int = 10,
         batch_size: int = 16,
         lr: float = 1e-5,
         l2: float = 1e-5,
@@ -324,7 +325,7 @@ class NeuralNetwork(nn.Module):
     ):
         """
         Train the model. Model is trained using Adam optimizer and Mean Squared Error loss.
-        Early stopping is used to prevent overfitting. If the validation loss does not improve for 'patience' epochs, and the epochs is greater than or equal to half of the total epochs, the training will stop.
+        Early stopping is used to prevent overfitting. If the validation loss does not improve for 'patience' epochs, and the number of epochs is greater than or equal to 'min_epochs', training will stop.
 
         Parameters
         ----------
@@ -388,7 +389,7 @@ class NeuralNetwork(nn.Module):
                 else:
                     no_improve_epochs += 1
 
-                if epoch >= epochs // 2 and no_improve_epochs >= patience:
+                if epoch >= min_epochs and no_improve_epochs >= patience:
                     print(f"Early stopping at epoch {epoch}")
                     break
 
@@ -440,7 +441,7 @@ def objective(
             chosen_features.append(ADDITIONAL_COLUMNS[i])
 
     n_hidden_layers = trial.suggest_int("n_hidden_layers", 0, 5)
-    hidden_dim = trial.suggest_categorical("hidden_dim", [128, 256, 512, 1024, 2048, 4096])
+    hidden_dim = trial.suggest_categorical("hidden_dim", [128, 256, 512, 1024, 2048])
     use_postal_code = trial.suggest_categorical("use_postal_code", [True, False])
 
     if use_postal_code:
@@ -562,7 +563,7 @@ def main(tune_model: bool = True):
     df = process_data()
 
     if tune_model:
-        best_params = model_tuning(df, epochs=100, n_trials=200)
+        best_params = model_tuning(df, epochs=100, n_trials=100)
     else:
         with open("saved_model/best_params.json", "r") as f:
             best_params = json.load(f)
