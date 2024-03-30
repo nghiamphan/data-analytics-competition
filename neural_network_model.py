@@ -450,6 +450,9 @@ def objective(
         postal_code_first_3_dim = 0
         postal_code_dim = 0
 
+    lr = trial.suggest_categorical("lr", [1e-6, 1e-5, 1e-4, 1e-3])
+    l2 = trial.suggest_categorical("l2", [0, 1e-6, 1e-5, 1e-4])
+
     input_train, target_train, input_val, target_val, _, _ = setup_data(df, is_halifax_only=is_halifax_only)
 
     model = NeuralNetwork(
@@ -468,6 +471,8 @@ def objective(
         target_val,
         epochs,
         batch_size=512 if is_halifax_only else 16,
+        lr=lr,
+        l2=l2,
     )
     return mse
 
@@ -557,7 +562,7 @@ def main(tune_model: bool = True):
     df = process_data()
 
     if tune_model:
-        best_params = model_tuning(df, epochs=100, n_trials=100)
+        best_params = model_tuning(df, epochs=100, n_trials=200)
     else:
         with open("saved_model/best_params.json", "r") as f:
             best_params = json.load(f)
@@ -591,6 +596,8 @@ def main(tune_model: bool = True):
         target_val,
         epochs=200,
         batch_size=512 if best_params["is_halifax_only"] else 16,
+        lr=best_params["lr"],
+        l2=best_params["l2"],
         print_loss=True,
     )
 
