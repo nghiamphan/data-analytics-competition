@@ -313,17 +313,18 @@ class NeuralNetwork(nn.Module):
         self,
         input_train: torch.Tensor,
         target_train: torch.Tensor,
-        input_val: torch.Tensor,
-        target_val: torch.Tensor,
-        epochs: int,
-        batch_size: int = 8,
+        input_val: torch.Tensor = None,
+        target_val: torch.Tensor = None,
+        epochs: int = 100,
+        batch_size: int = 16,
         lr: float = 1e-5,
-        patience: int = 3,
+        l2: float = 1e-5,
+        patience: int = 5,
         print_loss: bool = False,
     ):
         """
         Train the model. Model is trained using Adam optimizer and Mean Squared Error loss.
-        Early stopping is used to prevent overfitting. If the validation loss does not improve for 'patience' epochs, and the epochs is greater than 100, the training will stop.
+        Early stopping is used to prevent overfitting. If the validation loss does not improve for 'patience' epochs, and the epochs is greater than or equal to half of the total epochs, the training will stop.
 
         Parameters
         ----------
@@ -338,18 +339,25 @@ class NeuralNetwork(nn.Module):
         epochs : int
             The number of epochs to train the model.
         batch_size : int
-            The batch size for training. Default: 8.
+            The batch size for training.
         lr : float
-            The learning rate for the optimizer. Default: 1e-5.
+            The learning rate for the optimizer.
+        l2 : float
+            The L2 regularization parameter.
         patience : int
-            The number of epochs with no improvement before early stopping. Default: 3.
+            The number of epochs with no improvement before early stopping.
         print_loss : bool
-            If True, print the loss every 20 epochs. Default: False.
+            If True, print the loss every 20 epochs.
+
+        Returns
+        -------
+        val_loss: float
+            The validation loss of the model. Returns None if input_val and target_val are None.
         """
         train_dataloader = DataLoader(TensorDataset(input_train, target_train), batch_size=batch_size, shuffle=True)
 
         criterion = nn.MSELoss()
-        optimizer = optim.Adam(self.parameters(), lr=lr, weight_decay=1e-5)
+        optimizer = optim.Adam(self.parameters(), lr=lr, weight_decay=l2)
 
         best_val_loss = float("inf")
         no_improve_epochs = 0  # Number of epochs with no improvement
@@ -366,27 +374,29 @@ class NeuralNetwork(nn.Module):
                 loss.backward()
                 optimizer.step()
 
-            with torch.no_grad():
-                input_val = input_val.to(self.device)
-                target_val = target_val.to(self.device)
+            if input_val != None and target_val != None:
+                with torch.no_grad():
+                    input_val = input_val.to(self.device)
+                    target_val = target_val.to(self.device)
 
-                prediction = self(input_val)
-                val_loss = criterion(prediction, target_val)
+                    prediction = self(input_val)
+                    val_loss = criterion(prediction, target_val)
 
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                no_improve_epochs = 0
-            else:
-                no_improve_epochs += 1
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    no_improve_epochs = 0
+                else:
+                    no_improve_epochs += 1
 
-            if epoch >= 100 and no_improve_epochs >= patience:
-                print(f"Early stopping at epoch {epoch}")
-                break
+                if epoch >= epochs // 2 and no_improve_epochs >= patience:
+                    print(f"Early stopping at epoch {epoch}")
+                    break
 
             if print_loss and epoch % 20 == 0:
                 print(f"Epoch {epoch}, Loss: {loss.item()}")
 
-        return val_loss.item()
+        if input_val != None and target_val != None:
+            return val_loss.item()
 
     def evaluate(self, input_test: torch.Tensor, target_test: torch.Tensor) -> tuple[float, torch.Tensor]:
         self.eval()
@@ -430,7 +440,7 @@ def objective(
             chosen_features.append(ADDITIONAL_COLUMNS[i])
 
     n_hidden_layers = trial.suggest_int("n_hidden_layers", 0, 5)
-    hidden_dim = trial.suggest_categorical("hidden_dim", [128, 256, 512, 1024, 2048])
+    hidden_dim = trial.suggest_categorical("hidden_dim", [128, 256, 512, 1024, 2048, 4096])
     use_postal_code = trial.suggest_categorical("use_postal_code", [True, False])
 
     if use_postal_code:
@@ -451,11 +461,14 @@ def objective(
         postal_code_dim=postal_code_dim,
     )
 
-    # Because Halifax has fewer samples, we need to train the model more for it to converge
-    if is_halifax_only:
-        epochs = 100
-
-    mse = model.train_model(input_train, target_train, input_val, target_val, epochs)
+    mse = model.train_model(
+        input_train,
+        target_train,
+        input_val,
+        target_val,
+        epochs,
+        batch_size=512 if is_halifax_only else 16,
+    )
     return mse
 
 
@@ -544,7 +557,7 @@ def main(tune_model: bool = True):
     df = process_data()
 
     if tune_model:
-        best_params = model_tuning(df, epochs=25, n_trials=300)
+        best_params = model_tuning(df, epochs=100, n_trials=100)
     else:
         with open("saved_model/best_params.json", "r") as f:
             best_params = json.load(f)
@@ -571,7 +584,15 @@ def main(tune_model: bool = True):
         postal_code_dim=best_params["postal_code_dim"] if best_params["use_postal_code"] else 0,
     )
 
-    model.train_model(input_train, target_train, input_val, target_val, epochs=200, print_loss=True)
+    model.train_model(
+        input_train,
+        target_train,
+        input_val,
+        target_val,
+        epochs=200,
+        batch_size=512 if best_params["is_halifax_only"] else 16,
+        print_loss=True,
+    )
 
     # Save the model
     torch.save(model, "saved_model/nn_model.pt")
