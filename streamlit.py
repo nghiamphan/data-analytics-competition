@@ -7,7 +7,16 @@ import os
 import warnings
 
 from dotenv import load_dotenv
-from neural_network_model import NeuralNetwork, NEIGHBORHOOD_SCORES
+from neural_network_model import (
+    NeuralNetwork,
+    JSON_FILE_POSTAL_CODE_IDX_MAPPING,
+    JSON_FILE_POSTAL_CODE_FIRST_3_IDX_MAPPING,
+    PICKLE_FILE_INPUT_SCALER,
+    PICKLE_FILE_RENT_SCALER,
+    JSON_FILE_BEST_PARAMS,
+    FILE_TORCH_MODEL,
+)
+from rentals_ca_scraper import NEIGHBORHOOD_SCORES
 
 load_dotenv()
 warnings.filterwarnings("ignore")
@@ -19,18 +28,18 @@ NO_ADDRESS_FOUND = "No address found!"
 
 scraper = cloudscraper.create_scraper()
 
-with open("saved_model/postal_code_idx_mapping.json", "r") as f:
+with open(JSON_FILE_POSTAL_CODE_IDX_MAPPING, "r") as f:
     postal_code_to_idx_dict = json.load(f)
 
-with open("saved_model/postal_code_first_3_idx_mapping.json", "r") as f:
+with open(JSON_FILE_POSTAL_CODE_FIRST_3_IDX_MAPPING, "r") as f:
     postal_code_first_3_to_idx_dict = json.load(f)
 
-with open("saved_model/best_params.json", "r") as f:
+with open(JSON_FILE_BEST_PARAMS, "r") as f:
     best_params = json.load(f)
 
-input_scaler = joblib.load("saved_model/input_scaler.pkl")
-rent_scaler = joblib.load("saved_model/rent_scaler.pkl")
-model = torch.load("saved_model/nn_model.pt", map_location=torch.device("cpu"))
+input_scaler = joblib.load(PICKLE_FILE_INPUT_SCALER)
+rent_scaler = joblib.load(PICKLE_FILE_RENT_SCALER)
+model = torch.load(FILE_TORCH_MODEL, map_location=torch.device("cpu"))
 
 
 def fetch_address_info(text: str):

@@ -16,6 +16,17 @@ from rentals_ca_scraper import NEIGHBORHOOD_SCORES
 # The file contains the data that was lightly processed. It is the final output file from rentals_ca_scraper.py
 CSV_FILE_PROCESSED = "./data/units_info_processed.csv"
 
+JSON_FILE_POSTAL_CODE_IDX_MAPPING = "saved_model/postal_code_idx_mapping.json"
+JSON_FILE_POSTAL_CODE_FIRST_3_IDX_MAPPING = "saved_model/postal_code_first_3_idx_mapping.json"
+
+PICKLE_FILE_INPUT_SCALER = "saved_model/input_scaler.pkl"
+PICKLE_FILE_RENT_SCALER = "saved_model/rent_scaler.pkl"
+
+JSON_FILE_BEST_PARAMS = "saved_model/best_params.json"
+
+FILE_TORCH_MODEL = "saved_model/nn_model.pt"
+
+
 ESSENTIAL_COLUMNS = [
     "postal_code_first_3_idx",
     "postal_code_idx",
@@ -244,9 +255,9 @@ def process_data(csv: str = CSV_FILE_PROCESSED) -> pd.DataFrame:
     postal_code_first_3_idx_mapping = df.set_index("postal_code_first_3")["postal_code_first_3_idx"].to_dict()
 
     # Save the mapping to a JSON file
-    with open("saved_model/postal_code_idx_mapping.json", "w") as f:
+    with open(JSON_FILE_POSTAL_CODE_IDX_MAPPING, "w") as f:
         json.dump(postal_code_idx_mapping, f, indent=4)
-    with open("saved_model/postal_code_first_3_idx_mapping.json", "w") as f:
+    with open(JSON_FILE_POSTAL_CODE_FIRST_3_IDX_MAPPING, "w") as f:
         json.dump(postal_code_first_3_idx_mapping, f, indent=4)
 
     global gv_n_postal_codes_first_3
@@ -267,8 +278,8 @@ def process_data(csv: str = CSV_FILE_PROCESSED) -> pd.DataFrame:
     df["rent"] = gv_rent_scaler.fit_transform(df[["rent"]])
 
     # Save the scalers
-    joblib.dump(gv_input_scaler, "saved_model/input_scaler.pkl")
-    joblib.dump(gv_rent_scaler, "saved_model/rent_scaler.pkl")
+    joblib.dump(gv_input_scaler, PICKLE_FILE_INPUT_SCALER)
+    joblib.dump(gv_rent_scaler, PICKLE_FILE_RENT_SCALER)
 
     return df
 
@@ -632,7 +643,7 @@ def model_tuning(
 
     # Save the trials and best parameters
     study.trials_dataframe().to_csv("data/optuna_trials.csv", index=False)
-    with open("saved_model/best_params.json", "w") as f:
+    with open(JSON_FILE_BEST_PARAMS, "w") as f:
         json.dump(study.best_params, f, indent=4)
 
     return study.best_params
@@ -690,7 +701,7 @@ def get_optuna_study(study_name: str, write_to_json: bool = True) -> optuna.stud
     study = optuna.load_study(study_name=study_name, storage=OPTUNA_SQLITE_URL)
 
     if write_to_json:
-        with open("saved_model/best_params.json", "w") as f:
+        with open(JSON_FILE_BEST_PARAMS, "w") as f:
             json.dump(study.best_params, f, indent=4)
 
     return study
@@ -712,7 +723,7 @@ def main(n_trials: int = 10, k_fold: int = 0):
     if n_trials > 0:
         best_params = model_tuning(df, epochs=100, k_fold=k_fold, n_trials=n_trials)
     else:
-        with open("saved_model/best_params.json", "r") as f:
+        with open(JSON_FILE_BEST_PARAMS, "r") as f:
             best_params = json.load(f)
 
     print("\nBest parameters:", best_params)
@@ -752,7 +763,7 @@ def main(n_trials: int = 10, k_fold: int = 0):
     )
 
     # Save the model
-    torch.save(model, "saved_model/nn_model.pt")
+    torch.save(model, FILE_TORCH_MODEL)
 
     # Evaluate the model on the test set
     test_loss, prediction = model.evaluate(input_test, target_test)
