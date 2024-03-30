@@ -54,6 +54,8 @@ def setup_data(
     df: pd.DataFrame,
     is_halifax_only: bool = False,
     input_columns: list[str] = ESSENTIAL_COLUMNS + ADDITIONAL_COLUMNS,
+    test_and_val_to_total_ratio: float = 0.4,
+    test_to_test_and_val_ratio: float = 0.75,
 ) -> tuple:
     """
     Split the data into training, validation and test sets.
@@ -63,9 +65,13 @@ def setup_data(
     df : pd.DataFrame
         The DataFrame containing the data.
     is_halifax_only : bool
-        If True, only use the data from Halifax, Bedford and Dartmouth. Default: False.
+        If True, only use the data from Halifax, Bedford and Dartmouth.
     input_columns : list[str]
         The columns to use as input features.
+    test_and_val_to_total_ratio : float
+        The ratio of the test and validation sets to the total number of samples.
+    test_to_test_and_val_ratio : float
+        The ratio of the test set to the sum of the test and validation sets.
 
     Returns
     -------
@@ -81,14 +87,30 @@ def setup_data(
 
     if is_halifax_only:
         # train 60%, validation 10%, test 30%
-        df_train, df_temp = train_test_split(df_halifax, test_size=0.4, random_state=SEED)
-        df_val, df_test = train_test_split(df_temp, test_size=0.75, random_state=SEED)
+        df_train, df_temp = train_test_split(
+            df_halifax,
+            test_size=test_and_val_to_total_ratio,
+            random_state=SEED,
+        )
+        df_val, df_test = train_test_split(
+            df_temp,
+            test_size=test_to_test_and_val_ratio,
+            random_state=SEED,
+        )
 
         assert len(df_train) + len(df_val) + len(df_test) == len(df_halifax)
     else:
         # train: 60% halifax + other cities, validation: 10% halifax, test: 30% halifax
-        _, df_temp = train_test_split(df_halifax, test_size=0.4, random_state=SEED)
-        df_val, df_test = train_test_split(df_temp, test_size=0.75, random_state=SEED)
+        _, df_temp = train_test_split(
+            df_halifax,
+            test_size=test_and_val_to_total_ratio,
+            random_state=SEED,
+        )
+        df_val, df_test = train_test_split(
+            df_temp,
+            test_size=test_to_test_and_val_ratio,
+            random_state=SEED,
+        )
         df_train = df[~df.index.isin(df_val.index.union(df_test.index))]
 
         assert len(df_train) + len(df_val) + len(df_test) == len(df)
@@ -113,6 +135,62 @@ def setup_data(
     target_test = torch.tensor(target_test.values, dtype=torch.float32).unsqueeze(1)
 
     return input_train, target_train, input_val, target_val, input_test, target_test
+
+
+def setup_data_cross_validation(
+    df: pd.DataFrame,
+    is_halifax_only: bool = False,
+    input_columns: list[str] = ESSENTIAL_COLUMNS + ADDITIONAL_COLUMNS,
+    k_fold: int = 5,
+    fold_idx: int = 0,
+) -> tuple:
+    """
+    Split the data into training and validation sets for cross-validation.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The DataFrame containing the data.
+    is_halifax_only : bool
+        If True, only use the data from Halifax, Bedford and Dartmouth.
+    input_columns : list[str]
+        The columns to use as input features.
+    k_fold : int
+        The number of folds for cross-validation.
+    fold_idx : int
+        The index of the fold.
+
+    Returns
+    -------
+    input_train : torch.Tensor
+    target_train : torch.Tensor
+    input_val : torch.Tensor
+    target_val : torch.Tensor
+    """
+    df_halifax = df[df["city"].isin(HALIFAX)]
+
+    df_val = df_halifax.iloc[fold_idx::k_fold]
+
+    if is_halifax_only:
+        df_train = df_halifax[~df_halifax.index.isin(df_val.index)]
+    else:
+        df_train = df[~df.index.isin(df_val.index)]
+
+    input_train = df_train[input_columns]
+    target_train = df_train["rent"]
+    input_val = df_val[input_columns]
+    target_val = df_val["rent"]
+
+    print("\nNumber of samples in the training set:", len(input_train))
+    print("Number of samples in the validation set:", len(input_val))
+
+    # Convert the data to PyTorch tensors
+    input_train = torch.tensor(input_train.values, dtype=torch.float32)
+    target_train = torch.tensor(target_train.values, dtype=torch.float32).unsqueeze(1)
+    input_val = torch.tensor(input_val.values, dtype=torch.float32)
+    target_val = torch.tensor(target_val.values, dtype=torch.float32).unsqueeze(1)
+
+    return input_train, target_train, input_val, target_val
 
 
 def process_data(csv: str = CSV_FILE_PROCESSED) -> pd.DataFrame:
@@ -415,6 +493,7 @@ def objective(
     trial: optuna.Trial,
     df: pd.DataFrame,
     epochs: int,
+    k_fold: int = 0,
 ) -> float:
     """
     Objective function for optuna.
@@ -427,6 +506,8 @@ def objective(
         The DataFrame containing the data.
     epochs : int
         The number of epochs to train the model.
+    k_fold : int
+        The number of folds for cross-validation. If k_fold is 0, no cross-validation is used.
 
     Returns
     -------
@@ -454,33 +535,70 @@ def objective(
     lr = trial.suggest_categorical("lr", [1e-6, 1e-5, 1e-4, 1e-3])
     l2 = trial.suggest_categorical("l2", [0, 1e-6, 1e-5, 1e-4])
 
-    input_train, target_train, input_val, target_val, _, _ = setup_data(df, is_halifax_only=is_halifax_only)
+    if k_fold == 0:
+        input_train, target_train, input_val, target_val, _, _ = setup_data(df, is_halifax_only=is_halifax_only)
 
-    model = NeuralNetwork(
-        input_train.shape[1],
-        n_hidden_layers=n_hidden_layers,
-        hidden_dim=hidden_dim,
-        use_postal_code=use_postal_code,
-        postal_code_first_3_dim=postal_code_first_3_dim,
-        postal_code_dim=postal_code_dim,
-    )
+        model = NeuralNetwork(
+            input_train.shape[1],
+            n_hidden_layers=n_hidden_layers,
+            hidden_dim=hidden_dim,
+            use_postal_code=use_postal_code,
+            postal_code_first_3_dim=postal_code_first_3_dim,
+            postal_code_dim=postal_code_dim,
+        )
 
-    mse = model.train_model(
-        input_train,
-        target_train,
-        input_val,
-        target_val,
-        epochs,
-        batch_size=512 if is_halifax_only else 16,
-        lr=lr,
-        l2=l2,
-    )
+        mse = model.train_model(
+            input_train,
+            target_train,
+            input_val,
+            target_val,
+            epochs,
+            batch_size=512 if is_halifax_only else 16,
+            lr=lr,
+            l2=l2,
+        )
+    else:
+        mse = 0
+        if is_halifax_only and k_fold < 10:
+            k_fold = 10
+
+        for fold_idx in range(k_fold):
+            input_train, target_train, input_val, target_val = setup_data_cross_validation(
+                df,
+                is_halifax_only=is_halifax_only,
+                k_fold=k_fold,
+                fold_idx=fold_idx,
+            )
+
+            model = NeuralNetwork(
+                input_train.shape[1],
+                n_hidden_layers=n_hidden_layers,
+                hidden_dim=hidden_dim,
+                use_postal_code=use_postal_code,
+                postal_code_first_3_dim=postal_code_first_3_dim,
+                postal_code_dim=postal_code_dim,
+            )
+
+            mse += model.train_model(
+                input_train,
+                target_train,
+                input_val,
+                target_val,
+                epochs,
+                batch_size=512 if is_halifax_only else 16,
+                lr=lr,
+                l2=l2,
+            )
+
+        mse /= k_fold
+
     return mse
 
 
 def model_tuning(
     df: pd.DataFrame,
     epochs: int,
+    k_fold: int,
     n_trials: int,
 ) -> dict[str, float]:
     """
@@ -492,6 +610,8 @@ def model_tuning(
         The DataFrame containing the data.
     epochs : int
         The number of epochs to train the model in each trial.
+    k_fold : int
+        The number of folds for cross-validation. If k_fold is 0, no cross-validation is used.
     n_trials : int
         The number of experiments to run.
 
@@ -502,7 +622,7 @@ def model_tuning(
     """
     study = optuna.create_study(direction="minimize")
     study.optimize(
-        lambda trial: objective(trial, df, epochs),
+        lambda trial: objective(trial, df, epochs, k_fold),
         n_trials=n_trials,
     )
 
@@ -559,17 +679,28 @@ def print_result(
     plt.show()
 
 
-def main(tune_model: bool = True):
+def main(n_trials: int = 10, k_fold: int = 0):
+    """
+    Parameters
+    ----------
+    n_trials : int
+        The number of experiments to run for hyperparameter tuning. If n_trials is 0, no tuning is done and the best parameters are loaded from the saved file.
+    k_fold : int
+        The number of folds for cross-validation used in tuning. If k_fold is 0, no cross-validation is used.
+    """
     df = process_data()
+    df = df.sample(frac=1, random_state=SEED).reset_index(drop=True)
 
-    if tune_model:
-        best_params = model_tuning(df, epochs=100, n_trials=100)
+    # Tune the model
+    if n_trials > 0:
+        best_params = model_tuning(df, epochs=100, k_fold=k_fold, n_trials=n_trials)
     else:
         with open("saved_model/best_params.json", "r") as f:
             best_params = json.load(f)
 
     print("\nBest parameters:", best_params)
 
+    # Set up the dataset with the tuned parameters and split it into training, validation and test sets
     additional_columns = []
     for column in ADDITIONAL_COLUMNS:
         if best_params[f"feature_{column}"]:
@@ -581,6 +712,7 @@ def main(tune_model: bool = True):
         input_columns=ESSENTIAL_COLUMNS + additional_columns,
     )
 
+    # Create and train the model with the tuned parameters
     model = NeuralNetwork(
         input_train.shape[1],
         n_hidden_layers=best_params["n_hidden_layers"],
@@ -605,10 +737,11 @@ def main(tune_model: bool = True):
     # Save the model
     torch.save(model, "saved_model/nn_model.pt")
 
+    # Evaluate the model on the test set
     test_loss, prediction = model.evaluate(input_test, target_test)
     print("Test Loss:", test_loss)
     print_result(input_test, target_test, prediction, additional_columns)
 
 
 if __name__ == "__main__":
-    main(tune_model=True)
+    main(n_trials=10, k_fold=3)
