@@ -430,10 +430,15 @@ def objective(
             chosen_features.append(ADDITIONAL_COLUMNS[i])
 
     n_hidden_layers = trial.suggest_int("n_hidden_layers", 0, 5)
-    hidden_dim = trial.suggest_categorical("hidden_dim", [64, 128, 256, 512, 1024])
+    hidden_dim = trial.suggest_categorical("hidden_dim", [128, 256, 512, 1024, 2048])
     use_postal_code = trial.suggest_categorical("use_postal_code", [True, False])
-    postal_code_first_3_dim = trial.suggest_categorical("postal_code_first_3_dim", [2, 4, 8, 16])
-    postal_code_dim = trial.suggest_categorical("postal_code_dim", [2, 4, 8, 16])
+
+    if use_postal_code:
+        postal_code_first_3_dim = trial.suggest_categorical("postal_code_first_3_dim", [2, 4, 8, 16])
+        postal_code_dim = trial.suggest_categorical("postal_code_dim", [2, 4, 8, 16])
+    else:
+        postal_code_first_3_dim = 0
+        postal_code_dim = 0
 
     input_train, target_train, input_val, target_val, _, _ = setup_data(df, is_halifax_only=is_halifax_only)
 
@@ -562,8 +567,8 @@ def main(tune_model: bool = True):
         n_hidden_layers=best_params["n_hidden_layers"],
         hidden_dim=best_params["hidden_dim"],
         use_postal_code=best_params["use_postal_code"],
-        postal_code_first_3_dim=best_params["postal_code_first_3_dim"],
-        postal_code_dim=best_params["postal_code_dim"],
+        postal_code_first_3_dim=best_params["postal_code_first_3_dim"] if best_params["use_postal_code"] else 0,
+        postal_code_dim=best_params["postal_code_dim"] if best_params["use_postal_code"] else 0,
     )
 
     model.train_model(input_train, target_train, input_val, target_val, epochs=200, print_loss=True)
