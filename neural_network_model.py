@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import joblib
 import json
 
+from datetime import datetime
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import DataLoader, TensorDataset
@@ -42,6 +43,8 @@ ADDITIONAL_COLUMNS = [
 HALIFAX = ["Halifax", "Bedford", "Dartmouth"]
 
 SEED = 1234
+
+OPTUNA_SQLITE_URL = "sqlite:///saved_data/optuna.db"
 
 gv_input_scaler = MinMaxScaler()
 gv_rent_scaler = MinMaxScaler()
@@ -620,7 +623,8 @@ def model_tuning(
     best_params : dict[str, float]
         The best parameters found by optuna.
     """
-    study = optuna.create_study(direction="minimize")
+    study_name = f"study_{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}"
+    study = optuna.create_study(direction="minimize", study_name=study_name, storage=OPTUNA_SQLITE_URL)
     study.optimize(
         lambda trial: objective(trial, df, epochs, k_fold),
         n_trials=n_trials,
@@ -677,6 +681,19 @@ def print_result(
     plt.grid(True)
     plt.savefig("data/residual_plot.png")
     plt.show()
+
+
+def get_optuna_study(study_name: str, write_to_json: bool = True) -> optuna.study.Study:
+    """
+    Get the optuna study from the database.
+    """
+    study = optuna.load_study(study_name=study_name, storage=OPTUNA_SQLITE_URL)
+
+    if write_to_json:
+        with open("saved_model/best_params.json", "w") as f:
+            json.dump(study.best_params, f, indent=4)
+
+    return study
 
 
 def main(n_trials: int = 10, k_fold: int = 0):
