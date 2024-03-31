@@ -412,12 +412,13 @@ class NeuralNetwork(nn.Module):
         batch_size: int = 16,
         lr: float = 1e-5,
         l2: float = 1e-5,
-        patience: int = 5,
+        patience: int = 10,
         print_loss: bool = False,
     ):
         """
         Train the model. Model is trained using Adam optimizer and Mean Squared Error loss.
         Early stopping is used to prevent overfitting. If the validation loss does not improve for 'patience' epochs, and the number of epochs is greater than or equal to 'min_epochs', training will stop.
+        The model's weights of the epoch with the best validation loss will be used.
 
         Parameters
         ----------
@@ -444,8 +445,8 @@ class NeuralNetwork(nn.Module):
 
         Returns
         -------
-        val_loss: float
-            The validation loss of the model. Returns None if input_val and target_val are None.
+        best_val_loss : float
+            The best validation loss of an epoch during training.
         """
         train_dataloader = DataLoader(TensorDataset(input_train, target_train), batch_size=batch_size, shuffle=True)
 
@@ -453,6 +454,7 @@ class NeuralNetwork(nn.Module):
         optimizer = optim.Adam(self.parameters(), lr=lr, weight_decay=l2)
 
         best_val_loss = float("inf")
+        best_epoch = 0
         no_improve_epochs = 0  # Number of epochs with no improvement
 
         for epoch in range(1, epochs + 1):
@@ -477,19 +479,24 @@ class NeuralNetwork(nn.Module):
 
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
+                    best_epoch = epoch
                     no_improve_epochs = 0
+                    best_model_state = self.state_dict()
                 else:
                     no_improve_epochs += 1
 
                 if epoch >= min_epochs and no_improve_epochs >= patience:
-                    print(f"Early stopping at epoch {epoch}")
+                    print(
+                        f"Early stopping at epoch {epoch}, best epoch: {best_epoch}, best validation loss: {best_val_loss}"
+                    )
                     break
 
-            if print_loss and epoch % 20 == 0:
+            if print_loss and epoch % 2 == 0:
                 print(f"Epoch {epoch}, Loss: {loss.item()}")
 
         if input_val != None and target_val != None:
-            return val_loss.item()
+            self.load_state_dict(best_model_state)
+            return best_val_loss.item()
 
     def evaluate(self, input_test: torch.Tensor, target_test: torch.Tensor) -> tuple[float, torch.Tensor]:
         self.eval()
@@ -634,7 +641,7 @@ def model_tuning(
     best_params : dict[str, float]
         The best parameters found by optuna.
     """
-    study_name = f"study_{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}"
+    study_name = f"study_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{n_trials}_trials_{k_fold}_fold"
     study = optuna.create_study(direction="minimize", study_name=study_name, storage=OPTUNA_SQLITE_URL)
     study.optimize(
         lambda trial: objective(trial, df, epochs, k_fold),
@@ -642,7 +649,7 @@ def model_tuning(
     )
 
     # Save the trials and best parameters
-    study.trials_dataframe().to_csv("data/optuna_trials.csv", index=False)
+    study.trials_dataframe().to_csv(f"data/optuna_{study_name}.csv", index=False)
     with open(JSON_FILE_BEST_PARAMS, "w") as f:
         json.dump(study.best_params, f, indent=4)
 
@@ -662,7 +669,7 @@ def print_result(
     target_test_np = gv_rent_scaler.inverse_transform(target_test.cpu().numpy().reshape(-1, 1)).flatten()
 
     residual = prediction_np - target_test_np
-    print("Mean Error:", residual.mean())
+    print("Mean Absolute Error:", abs(residual).mean())
     rmse = (residual**2).mean() ** 0.5
     print("Root Mean Squared Error:", rmse)
 
