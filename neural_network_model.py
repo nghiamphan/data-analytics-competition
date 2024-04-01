@@ -11,10 +11,8 @@ from datetime import datetime
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import DataLoader, TensorDataset
-from rentals_ca_scraper import NEIGHBORHOOD_SCORES
+from rentals_ca_scraper import OUTPUT_CSV_FILE_PROCESSED, NEIGHBORHOOD_SCORES
 
-# The file contains the data that was lightly processed. It is the final output file from rentals_ca_scraper.py
-CSV_FILE_PROCESSED = "./data/units_info_processed.csv"
 
 JSON_FILE_POSTAL_CODE_IDX_MAPPING = "saved_model/postal_code_idx_mapping.json"
 JSON_FILE_POSTAL_CODE_FIRST_3_IDX_MAPPING = "saved_model/postal_code_first_3_idx_mapping.json"
@@ -207,7 +205,7 @@ def setup_data_cross_validation(
     return input_train, target_train, input_val, target_val
 
 
-def process_data(csv: str = CSV_FILE_PROCESSED) -> pd.DataFrame:
+def process_data(csv: str = OUTPUT_CSV_FILE_PROCESSED) -> pd.DataFrame:
     """
     Process the data before feeding them into the model.
 

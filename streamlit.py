@@ -1,5 +1,6 @@
 import streamlit as st
 import cloudscraper
+import pandas as pd
 import torch
 import joblib
 import json
@@ -16,7 +17,7 @@ from neural_network_model import (
     JSON_FILE_BEST_PARAMS,
     FILE_TORCH_MODEL,
 )
-from rentals_ca_scraper import NEIGHBORHOOD_SCORES
+from rentals_ca_scraper import OUTPUT_CSV_FILE_PROCESSED, NEIGHBORHOOD_SCORES
 
 load_dotenv()
 warnings.filterwarnings("ignore")
@@ -92,30 +93,32 @@ def input():
             st.write(NO_ADDRESS_FOUND)
 
         else:
-            text_to_display = f'Address: {st.session_state["address"]["formatted"]}.'
+            st.write(f'Full address: {st.session_state["address"]["formatted"]}.')
+
+            longitude = st.session_state["address"]["lon"]
+            latitude = st.session_state["address"]["lat"]
 
             # Get postal code from the address and turn it into index
             postal_code = st.session_state["address"]["postcode"]
             if postal_code in postal_code_to_idx_dict:
                 postal_code_idx = postal_code_to_idx_dict[postal_code]
             else:
+                # If postal code not in the dataset, find the closest postal code
+                df = pd.read_csv(OUTPUT_CSV_FILE_PROCESSED)
 
-                text_to_display = (
-                    f"{text_to_display} Warning: Postal code not exist in the model. Prediction may not be accurate."
-                )
+                min_distance = float("inf")
+                for idx, row in df.iterrows():
+                    distance = (longitude - row["longitude"]) ** 2 + (latitude - row["latitude"]) ** 2
+                    if distance < min_distance:
+                        min_distance = distance
+                        postal_code = row["postal_code"]
+                        postal_code_idx = postal_code_to_idx_dict[postal_code]
 
             # Get first 3 digits of postal code and turn it into index
             postal_code_first_3 = postal_code[:3]
-            if postal_code_first_3 in postal_code_first_3_to_idx_dict:
-                postal_code_first_3_idx = postal_code_first_3_to_idx_dict[postal_code_first_3]
-            else:
-                postal_code_first_3_idx = 0
-
-            st.write(text_to_display)
+            postal_code_first_3_idx = postal_code_first_3_to_idx_dict[postal_code_first_3]
 
             # Get neighborhood scores from Locallogic API
-            longitude = st.session_state["address"]["lon"]
-            latitude = st.session_state["address"]["lat"]
             fetch_neighborhood_scores(neighborhood_scores, longitude, latitude)
 
     st.button(

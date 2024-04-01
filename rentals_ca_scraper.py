@@ -142,7 +142,7 @@ NEIGHBORHOOD_SCORES = [
 LOCALLOGIC_API_TOKEN = os.getenv("LOCALLOGIC_API_TOKEN")
 
 OUTPUT_CSV_FILE_RAW = "./data/units_info_raw.csv"
-OUTPUT_CSV_FILE_PROCESSED = "./data/units_info_processed.csv"
+OUTPUT_CSV_FILE_PROCESSED = "./saved_data/units_info_processed.csv"
 OUTPUT_CSV_FILE_PROCESSED_HALIFAX = "./data/units_info_processed_halifax.csv"
 
 failed_urls = []
