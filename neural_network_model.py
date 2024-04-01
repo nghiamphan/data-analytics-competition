@@ -634,7 +634,7 @@ def model_tuning(
     epochs: int,
     k_fold: int,
     n_trials: int,
-) -> dict[str, float]:
+) -> optuna.study.Study:
     """
     Tune the data selection and hyperparameters of the model.
 
@@ -651,8 +651,8 @@ def model_tuning(
 
     Returns
     -------
-    best_params : dict[str, float]
-        The best parameters found by optuna.
+    study : optuna.study.Study
+        The optuna study object.
     """
     study_name = f"study_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{n_trials}_trials_{k_fold}_fold"
     study = optuna.create_study(direction="minimize", study_name=study_name, storage=OPTUNA_SQLITE_URL)
@@ -670,7 +670,7 @@ def model_tuning(
     print("Best trial:", study.best_trial.number)
     print("Best parameters:", study.best_params)
 
-    return study.best_params
+    return study
 
 
 def print_result(
@@ -678,7 +678,11 @@ def print_result(
     target_test: torch.Tensor,
     prediction: torch.Tensor,
     addtional_columns: list = ADDITIONAL_COLUMNS,
-):
+) -> tuple[float, float]:
+    """
+    Based on the prediction and target values, return the mean absolute error and root mean squared error.
+    Print the predictions and residuals to a CSV file and plot the residuals.
+    """
     # Convert tensors to numpy arrays and reshape
     input_test_np = input_test.cpu().numpy().reshape(-1, input_test.shape[1])
 
@@ -686,7 +690,8 @@ def print_result(
     target_test_np = gv_rent_scaler.inverse_transform(target_test.cpu().numpy().reshape(-1, 1)).flatten()
 
     residual = prediction_np - target_test_np
-    print("Mean Absolute Error:", abs(residual).mean())
+    mean_absolute_error = abs(residual).mean()
+    print("Mean Absolute Error:", mean_absolute_error)
     rmse = (residual**2).mean() ** 0.5
     print("Root Mean Squared Error:", rmse)
 
@@ -717,6 +722,8 @@ def print_result(
     plt.savefig("data/residual_plot.png")
     plt.show()
 
+    return mean_absolute_error, rmse
+
 
 def get_optuna_study(study_name: str, write_to_json: bool = True) -> optuna.study.Study:
     """
@@ -745,7 +752,8 @@ def main(n_trials: int = 10, k_fold: int = 0):
 
     # Tune the model
     if n_trials > 0:
-        best_params = model_tuning(df, epochs=100, k_fold=k_fold, n_trials=n_trials)
+        study = model_tuning(df, epochs=100, k_fold=k_fold, n_trials=n_trials)
+        best_params = study.best_params
     else:
         with open(JSON_FILE_BEST_PARAMS, "r") as f:
             best_params = json.load(f)
@@ -790,7 +798,12 @@ def main(n_trials: int = 10, k_fold: int = 0):
     # Evaluate the model on the test set
     test_loss, prediction = model.evaluate(input_test, target_test)
     print("Test Loss:", test_loss)
-    print_result(input_test, target_test, prediction, additional_columns)
+    mean_absolute_error, rmse = print_result(input_test, target_test, prediction, additional_columns)
+
+    # Save the results to the optuna study sqlite database
+    study.set_user_attr("test_loss", round(test_loss, 8))
+    study.set_user_attr("mae", int(mean_absolute_error))
+    study.set_user_attr("rmse", int(rmse))
 
 
 if __name__ == "__main__":
