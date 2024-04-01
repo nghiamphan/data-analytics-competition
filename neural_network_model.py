@@ -227,7 +227,7 @@ def process_data(csv: str = CSV_FILE_PROCESSED) -> pd.DataFrame:
     df = df[df["property_type"] == "apartment"]
 
     # Filter out units with 0 baths or 0.5 beds
-    # df = df[(df["baths"] >= 1) & (df["beds"] != 0.5)]
+    df = df[(df["baths"] >= 1) & (df["beds"] != 0.5)]
 
     # Process the 'area' column
     df = df[~((df["area"] > 0) & (df["area"] < 350))]
@@ -283,6 +283,20 @@ def process_data(csv: str = CSV_FILE_PROCESSED) -> pd.DataFrame:
     # Save the scalers
     joblib.dump(gv_input_scaler, PICKLE_FILE_INPUT_SCALER)
     joblib.dump(gv_rent_scaler, PICKLE_FILE_RENT_SCALER)
+
+    # Remove the features that are obviously not reasonably (positive) correlated with the rent
+    global ADDITIONAL_COLUMNS
+    columns_to_keep = []
+    for feature in ADDITIONAL_COLUMNS:
+        correlation = df["rent"].corr(df[feature])
+        print(f"Correlation between 'rent' and '{feature}': {correlation}")
+        if feature == "studio" or correlation >= 0:
+            columns_to_keep.append(feature)
+
+    print("Featured to remove from consideration:", set(ADDITIONAL_COLUMNS) - set(columns_to_keep))
+    ADDITIONAL_COLUMNS = columns_to_keep
+
+    print("\nData points:", len(df))
 
     return df
 
@@ -493,7 +507,7 @@ class NeuralNetwork(nn.Module):
                     break
 
             if print_loss and epoch % 2 == 0:
-                print(f"Epoch {epoch}, Loss: {loss.item()}")
+                print(f"Epoch {epoch}, last batch of training loss: {loss.item()}")
 
         if input_val != None and target_val != None:
             self.load_state_dict(best_model_state)
@@ -654,6 +668,10 @@ def model_tuning(
     with open(JSON_FILE_BEST_PARAMS, "w") as f:
         json.dump(study.best_params, f, indent=4)
 
+    print("\nStudy:", study_name)
+    print("Best trial:", study.best_trial.number)
+    print("Best parameters:", study.best_params)
+
     return study.best_params
 
 
@@ -733,8 +751,6 @@ def main(n_trials: int = 10, k_fold: int = 0):
     else:
         with open(JSON_FILE_BEST_PARAMS, "r") as f:
             best_params = json.load(f)
-
-    print("\nBest parameters:", best_params)
 
     # Set up the dataset with the tuned parameters and split it into training, validation and test sets
     additional_columns = []

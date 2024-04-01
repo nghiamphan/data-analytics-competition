@@ -152,7 +152,7 @@ def input():
     st.write("Additional Features")
     additional_features = []
     for feature in additional_feature_dict:
-        if best_params[feature]:
+        if feature in best_params and best_params[feature]:
             feature_name = feature[8:].replace("_", " ").title()
             additional_feature_dict[feature] = st.checkbox(feature_name)
             additional_features.append(1 if additional_feature_dict[feature] else 0)
