@@ -226,14 +226,17 @@ def process_data(csv: str = CSV_FILE_PROCESSED) -> pd.DataFrame:
     # Filter apartments
     df = df[df["property_type"] == "apartment"]
 
-    # Filter out units with 0 baths
-    df = df[df["baths"] > 0]
+    # Filter out units with 0 baths or 0.5 beds
+    # df = df[(df["baths"] >= 1) & (df["beds"] != 0.5)]
 
     # Process the 'area' column
     df = df[~((df["area"] > 0) & (df["area"] < 350))]
 
+    df["area"] = df["area"].fillna(0)
+    df["rent"] = df["rent"].fillna(0)
+
     process_missing_area(df)
-    df = df[(df["area"].notna()) & (df["area"] != 0) & (df["rent"].notna()) & (df["rent"] != 0)]
+    df = df[(df["area"] != 0) & (df["rent"] != 0)]
 
     # Process the "studio" column
     df["studio"] = (df["beds"] == 0).astype(int)
@@ -289,12 +292,10 @@ def process_missing_area(df: pd.DataFrame):
     Estimate the missing values in the 'area' column. Change the values in-place for the DataFrame parameter.
     """
     # Calculate the mean 'areas' for each group of 'beds' and 'baths'
-    df["mean_area"] = df[(df["area"] != 0) & (df["area"].notna())].groupby(["beds", "baths"])["area"].transform("mean")
+    df["mean_area"] = df[df["area"] != 0].groupby(["beds", "baths"])["area"].transform("mean")
 
     # Extract the unique tuples of 'beds', 'baths' and 'mean_area' if 'area' is not 0 or None
-    mean_area_tuples = set(
-        df[(df["area"] != 0) & (df["area"].notna())][["beds", "baths", "mean_area"]].itertuples(index=False, name=None)
-    )
+    mean_area_tuples = set(df[df["area"] != 0][["beds", "baths", "mean_area"]].itertuples(index=False, name=None))
 
     # Create a dictionary to store the mean 'area' for each group of 'beds' and 'baths'
     mean_area_dict = {}
@@ -303,7 +304,7 @@ def process_missing_area(df: pd.DataFrame):
 
     # Replace the 0 or None 'area' with the mean 'area' for the corresponding group of 'beds' and 'baths'
     for index, row in df.iterrows():
-        if row["area"] == 0 or pd.isna(row["area"]):
+        if row["area"] == 0:
             if (row["beds"], row["baths"]) in mean_area_dict:
                 df.at[index, "area"] = mean_area_dict[(row["beds"], row["baths"])]
 
