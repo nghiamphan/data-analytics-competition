@@ -291,7 +291,7 @@ def process_data(csv: str = OUTPUT_CSV_FILE_PROCESSED) -> pd.DataFrame:
         if feature == "studio" or correlation >= 0:
             columns_to_keep.append(feature)
 
-    print("Featured to remove from consideration:", set(ADDITIONAL_COLUMNS) - set(columns_to_keep))
+    print("Features to remove from consideration:", set(ADDITIONAL_COLUMNS) - set(columns_to_keep))
     ADDITIONAL_COLUMNS = columns_to_keep
 
     print("\nData points:", len(df))
@@ -801,9 +801,13 @@ def main(n_trials: int = 10, k_fold: int = 0):
     mean_absolute_error, rmse = print_result(input_test, target_test, prediction, additional_columns)
 
     # Save the results to the optuna study sqlite database
+    study.set_user_attr("study_name", study.study_name)
     study.set_user_attr("test_loss", round(test_loss, 8))
-    study.set_user_attr("mae", int(mean_absolute_error))
+    study.set_user_attr("mean_absolute_error", int(mean_absolute_error))
     study.set_user_attr("rmse", int(rmse))
+    study.set_user_attr("best_trial", f"{study.best_trial.number}/{n_trials-1}")
+    study.set_user_attr("best_val_loss", study.best_trial.value)
+    study.set_user_attr("best_params", best_params)
 
 
 if __name__ == "__main__":
