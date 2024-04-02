@@ -33,10 +33,10 @@ ESSENTIAL_COLUMNS = [
     "baths",
     "area",
     "luxury_score",
+    "studio",
 ] + NEIGHBORHOOD_SCORES
 
 ADDITIONAL_COLUMNS = [
-    "studio",
     "pet_friendly",
     "furnished",
     "fitness_center",
@@ -295,7 +295,7 @@ def process_data(csv: str = OUTPUT_CSV_FILE_PROCESSED) -> pd.DataFrame:
     for feature in ADDITIONAL_COLUMNS:
         correlation = df["rent"].corr(df[feature])
         print(f"Correlation between 'rent' and '{feature}': {correlation}")
-        if feature == "studio" or correlation >= 0:
+        if correlation >= 0:
             columns_to_keep.append(feature)
 
     print("Features to remove from consideration:", set(ADDITIONAL_COLUMNS) - set(columns_to_keep))

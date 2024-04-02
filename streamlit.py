@@ -133,13 +133,15 @@ def input():
     baths = st.number_input("Number of bathrooms", min_value=1, max_value=10, value=1)
     area = st.number_input("Area (square footage)", min_value=350, max_value=5000, value=1000)
 
-    beds, baths, area = input_scaler.transform([[beds, baths, area]])[0]
-
     luxury_score = st.number_input("Luxury Score", min_value=0.0, max_value=2.0, value=1.0)
+
+    if beds == 1:
+        studio = st.checkbox("Studio")
+    else:
+        studio = False
 
     # Additional Features
     additional_feature_dict = {
-        "feature_studio": None,
         "feature_pet_friendly": None,
         "feature_furnished": None,
         "feature_fitness_center": None,
@@ -164,6 +166,7 @@ def input():
 
     input_tensor = None
     if "address" in st.session_state and st.session_state["address"] != NO_ADDRESS_FOUND:
+        beds, baths, area = input_scaler.transform([[beds, baths, area]])[0]
         input_tensor = torch.tensor(
             [
                 [
@@ -173,6 +176,7 @@ def input():
                     baths,
                     area,
                     luxury_score,
+                    1 if studio else 0,
                     *neighborhood_scores,
                     *additional_features,
                 ]
