@@ -6,6 +6,7 @@ import optuna
 import matplotlib.pyplot as plt
 import joblib
 import json
+import sqlite3
 
 from datetime import datetime
 from sklearn.model_selection import train_test_split
@@ -661,10 +662,8 @@ def model_tuning(
         n_trials=n_trials,
     )
 
-    # Save the trials and best parameters
+    # Save the trials to a CSV file
     study.trials_dataframe().to_csv(f"data/optuna_{study_name}.csv", index=False)
-    with open(JSON_FILE_BEST_PARAMS, "w") as f:
-        json.dump(study.best_params, f, indent=4)
 
     print("\nStudy:", study_name)
     print("Best trial:", study.best_trial.number)
@@ -720,38 +719,52 @@ def print_result(
     # Show the plot
     plt.grid(True)
     plt.savefig("data/residual_plot.png")
-    plt.show()
 
     return mean_absolute_error, rmse
 
 
-def get_optuna_study(study_name: str, write_to_json: bool = True) -> optuna.study.Study:
+def get_best_rmse() -> float:
     """
-    Get the optuna study from the database.
+    Get the best RMSE from all the optuna studies in the database.
     """
-    study = optuna.load_study(study_name=study_name, storage=OPTUNA_SQLITE_URL)
+    try:
+        conn = sqlite3.connect(OPTUNA_SQLITE_URL[10:])
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT value_json FROM study_user_attributes WHERE key = 'rmse' ORDER BY value_json ASC LIMIT 1"
+        )
+        result = cursor.fetchone()
+        best_rmse = float(result[0]) if result is not None else float("inf")
+        conn.close()
+    except sqlite3.OperationalError as e:
+        print("Error:", e)
+        best_rmse = float("inf")
 
-    if write_to_json:
-        with open(JSON_FILE_BEST_PARAMS, "w") as f:
-            json.dump(study.best_params, f, indent=4)
-
-    return study
+    return best_rmse
 
 
-def main(n_trials: int = 10, k_fold: int = 0):
+def main(n_trials: int = 10, k_fold: int = 0, train_model: bool = True):
     """
+    - If train_model is False, load the model from the saved file.
+    - If n_trials > 0 and train_model is True, tune and train the model.
+    - If n_trials = 0 and train_model is True, load the best parameters from the saved file and train the model.
+
+    In all cases, evaluate the model on the test set.
+
     Parameters
     ----------
     n_trials : int
         The number of experiments to run for hyperparameter tuning. If n_trials is 0, no tuning is done and the best parameters are loaded from the saved file.
     k_fold : int
         The number of folds for cross-validation used in tuning. If k_fold is 0, no cross-validation is used.
+    train_model : bool
+        If True, train the model. If False, load the model from the saved file.
     """
     df = process_data()
     df = df.sample(frac=1, random_state=SEED).reset_index(drop=True)
 
     # Tune the model
-    if n_trials > 0:
+    if n_trials > 0 and train_model:
         study = model_tuning(df, epochs=100, k_fold=k_fold, n_trials=n_trials)
         best_params = study.best_params
     else:
@@ -770,30 +783,31 @@ def main(n_trials: int = 10, k_fold: int = 0):
         input_columns=ESSENTIAL_COLUMNS + additional_columns,
     )
 
-    # Create and train the model with the tuned parameters
-    model = NeuralNetwork(
-        input_train.shape[1],
-        n_hidden_layers=best_params["n_hidden_layers"],
-        hidden_dim=best_params["hidden_dim"],
-        use_postal_code=best_params["use_postal_code"],
-        postal_code_first_3_dim=best_params["postal_code_first_3_dim"] if best_params["use_postal_code"] else 0,
-        postal_code_dim=best_params["postal_code_dim"] if best_params["use_postal_code"] else 0,
-    )
+    if train_model:
+        # Create and train the model with the tuned parameters
+        model = NeuralNetwork(
+            input_train.shape[1],
+            n_hidden_layers=best_params["n_hidden_layers"],
+            hidden_dim=best_params["hidden_dim"],
+            use_postal_code=best_params["use_postal_code"],
+            postal_code_first_3_dim=best_params["postal_code_first_3_dim"] if best_params["use_postal_code"] else 0,
+            postal_code_dim=best_params["postal_code_dim"] if best_params["use_postal_code"] else 0,
+        )
 
-    model.train_model(
-        input_train,
-        target_train,
-        input_val,
-        target_val,
-        epochs=200,
-        batch_size=512 if best_params["is_halifax_only"] else 16,
-        lr=best_params["lr"],
-        l2=best_params["l2"],
-        print_loss=True,
-    )
-
-    # Save the model
-    torch.save(model, FILE_TORCH_MODEL)
+        model.train_model(
+            input_train,
+            target_train,
+            input_val,
+            target_val,
+            epochs=200,
+            batch_size=512 if best_params["is_halifax_only"] else 16,
+            lr=best_params["lr"],
+            l2=best_params["l2"],
+            print_loss=True,
+        )
+    else:
+        # Load the model
+        model = torch.load(FILE_TORCH_MODEL)
 
     # Evaluate the model on the test set
     test_loss, prediction = model.evaluate(input_test, target_test)
@@ -801,14 +815,26 @@ def main(n_trials: int = 10, k_fold: int = 0):
     mean_absolute_error, rmse = print_result(input_test, target_test, prediction, additional_columns)
 
     # Save the results to the optuna study sqlite database
-    study.set_user_attr("study_name", study.study_name)
-    study.set_user_attr("test_loss", round(test_loss, 8))
-    study.set_user_attr("mean_absolute_error", int(mean_absolute_error))
-    study.set_user_attr("rmse", int(rmse))
-    study.set_user_attr("best_trial", f"{study.best_trial.number}/{n_trials-1}")
-    study.set_user_attr("best_val_loss", study.best_trial.value)
-    study.set_user_attr("best_params", best_params)
+    if n_trials > 0 and train_model:
+        best_rmse_so_far = get_best_rmse()
+        study.set_user_attr("study_name", study.study_name)
+        study.set_user_attr("test_loss", round(test_loss, 8))
+        study.set_user_attr("mean_absolute_error", int(mean_absolute_error))
+        study.set_user_attr("rmse", int(rmse))
+        study.set_user_attr("best_trial", f"{study.best_trial.number}/{n_trials-1}")
+        study.set_user_attr("best_val_loss", study.best_trial.value)
+        study.set_user_attr("best_params", best_params)
+
+        if rmse < best_rmse_so_far:
+            print("\nNew best RMSE found. Save best parameters and model.")
+
+            # Save the best parameters to a JSON file
+            with open(JSON_FILE_BEST_PARAMS, "w") as f:
+                json.dump(study.best_params, f, indent=4)
+
+            # Save the model
+            torch.save(model, FILE_TORCH_MODEL)
 
 
 if __name__ == "__main__":
-    main(n_trials=10, k_fold=3)
+    main(n_trials=10, k_fold=3, train_model=True)
