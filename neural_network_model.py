@@ -32,6 +32,7 @@ ESSENTIAL_COLUMNS = [
     "beds",
     "baths",
     "area",
+    "luxury_score",
 ] + NEIGHBORHOOD_SCORES
 
 ADDITIONAL_COLUMNS = [
@@ -245,6 +246,11 @@ def process_data(csv: str = OUTPUT_CSV_FILE_PROCESSED) -> pd.DataFrame:
     df["rent_to_unit_area_ratio"] = df["rent"] / df["area"]
     df = df[(df["rent_to_unit_area_ratio"] > 1.5) & (df["rent_to_unit_area_ratio"] < 6)]
 
+    # Add luxury score
+    set_luxury_score(df)
+    df = df[df["bed_bath_combo_count"] >= 10]
+    df = df[(df["std_luxury"] >= -2) & (df["std_luxury"] <= 4)]
+
     # Convert postal_code to category and then to its corresponding codes
     df = df[df["postal_code"].notna()]
 
@@ -323,6 +329,23 @@ def process_missing_area(df: pd.DataFrame):
 
     # Drop the 'mean_area' column
     df.drop(columns=["mean_area"], inplace=True)
+
+
+def set_luxury_score(df: pd.DataFrame):
+    df["bed_bath_combo_count"] = df.groupby(["beds", "baths"])["rent"].transform("count")
+
+    df["mean_rent"] = df.groupby(["beds", "baths"])["rent"].transform("mean")
+    df["std_rent"] = df.groupby(["beds", "baths"])["rent"].transform("std")
+
+    print(
+        df.groupby(["beds", "baths"]).agg({"bed_bath_combo_count": "first", "mean_rent": "first", "std_rent": "first"})
+    )
+
+    df["std_luxury"] = (df["rent"] - df["mean_rent"]) / df["std_rent"]
+
+    bins = [-10, -1, 1, 2, 10]
+    labels = [0.25, 0.5, 0.75, 1]
+    df["luxury_score"] = pd.cut(df["std_luxury"], bins=bins, labels=labels)
 
 
 class NeuralNetwork(nn.Module):

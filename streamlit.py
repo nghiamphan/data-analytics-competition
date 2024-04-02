@@ -135,6 +135,8 @@ def input():
 
     beds, baths, area = input_scaler.transform([[beds, baths, area]])[0]
 
+    luxury_score = st.number_input("Luxury Score", min_value=0.0, max_value=2.0, value=1.0)
+
     # Additional Features
     additional_feature_dict = {
         "feature_studio": None,
@@ -170,6 +172,7 @@ def input():
                     beds,
                     baths,
                     area,
+                    luxury_score,
                     *neighborhood_scores,
                     *additional_features,
                 ]
