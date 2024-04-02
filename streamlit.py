@@ -79,7 +79,7 @@ def fetch_neighborhood_scores(neighborhood_scores: list[float], longitude: float
 
 
 def input():
-    # st.set_page_config(page_title="Halifax Rental Prediction")
+    st.set_page_config(page_title="Halifax Rental Prediction")
     st.title("Halifax Rental Prediction")
 
     # Address Input
