@@ -133,7 +133,11 @@ def input():
     baths = st.number_input("Number of bathrooms", min_value=1, max_value=10, value=1)
     area = st.number_input("Area (square footage)", min_value=350, max_value=5000, value=1000)
 
-    luxury_score = st.number_input("Luxury Score", min_value=0.0, max_value=2.0, value=1.0)
+    # Luxury Score
+    apartment_class = st.radio(
+        "Apartment Class", options=["Economic", "Regular", "Luxurious", "Super Luxurious"], index=1
+    )
+    luxury_score = get_luxury_score(apartment_class)
 
     if beds == 1:
         studio = st.checkbox("Studio")
@@ -167,7 +171,7 @@ def input():
     input_tensor = None
     if "address" in st.session_state and st.session_state["address"] != NO_ADDRESS_FOUND:
         beds, baths, area = input_scaler.transform([[beds, baths, area]])[0]
-        input_tensor = torch.tensor(
+        lower_input_tensor = torch.tensor(
             [
                 [
                     postal_code_first_3_idx,
@@ -175,13 +179,17 @@ def input():
                     beds,
                     baths,
                     area,
-                    luxury_score,
+                    luxury_score - 0.025,
                     1 if studio else 0,
                     *neighborhood_scores,
                     *additional_features,
                 ]
             ]
         ).float()
+        upper_input_tensor = lower_input_tensor.clone()
+        upper_input_tensor[0][5] = luxury_score + 0.025
+
+        input_tensor = torch.cat((lower_input_tensor, upper_input_tensor), 0)
 
     st.button(
         "Predict Rent",
@@ -194,14 +202,19 @@ def input():
         st.write(st.session_state["prediction"])
 
 
+def get_luxury_score(luxury_score):
+    return {"Economic": 0.25, "Regular": 0.5, "Luxurious": 0.75, "Super Luxurious": 1.0}.get(luxury_score, 0.5)
+
+
 def predict_rent(input_tensor: torch.Tensor):
     global model
 
     if input_tensor != None:
-        prediction = model(input_tensor).item()
-        prediction = rent_scaler.inverse_transform([[prediction]])[0][0]
+        with torch.no_grad():
+            predictions = model(input_tensor).flatten()
+        predictions = rent_scaler.inverse_transform([predictions])[0]
 
-        st.session_state["prediction"] = f"Predicted rent: ${prediction:.2f}"
+        st.session_state["prediction"] = f"Predicted rent: \${predictions[0]:.2f} - \${predictions[1]:.2f}"
     else:
         st.session_state["prediction"] = "Please check if the address is valid first."
 
