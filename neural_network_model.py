@@ -648,6 +648,14 @@ def objective(
                 l2=l2,
             )
 
+            # Report the current total mse divided by the number of folds processed so far to Optuna
+            trial.report(mse / (fold_idx + 1), step=fold_idx)
+
+            # Check if the trial should be pruned
+            if trial.should_prune():
+                print("Trial pruned at fold", fold_idx, "with mse:", mse / (fold_idx + 1))
+                raise optuna.TrialPruned()
+
         mse /= k_fold
 
     return mse
@@ -679,7 +687,12 @@ def model_tuning(
         The optuna study object.
     """
     study_name = f"study_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{n_trials}_trials_{k_fold}_fold"
-    study = optuna.create_study(direction="minimize", study_name=study_name, storage=OPTUNA_SQLITE_URL)
+    study = optuna.create_study(
+        direction="minimize",
+        study_name=study_name,
+        storage=OPTUNA_SQLITE_URL,
+        pruner=optuna.pruners.PercentilePruner(25, n_startup_trials=5, interval_steps=1),
+    )
     study.optimize(
         lambda trial: objective(trial, df, epochs, k_fold),
         n_trials=n_trials,
