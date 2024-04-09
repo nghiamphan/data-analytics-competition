@@ -109,7 +109,7 @@ def input():
                 min_distance = float("inf")
                 for idx, row in df.iterrows():
                     distance = (longitude - row["longitude"]) ** 2 + (latitude - row["latitude"]) ** 2
-                    if distance < min_distance:
+                    if distance < min_distance and row["postal_code"] in postal_code_to_idx_dict:
                         min_distance = distance
                         postal_code = row["postal_code"]
                         postal_code_idx = postal_code_to_idx_dict[postal_code]
