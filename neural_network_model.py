@@ -718,15 +718,23 @@ def print_result(
     Based on the prediction and target values, return the mean absolute error and root mean squared error.
     Print the predictions and residuals to a CSV file and plot the residuals.
     """
-    # Convert tensors to numpy arrays and reshape
-    input_test_np = input_test.cpu().numpy().reshape(-1, input_test.shape[1])
+    # Convert tensors to numpy arrays
+    input_test_np = input_test.cpu().numpy()
 
-    prediction_np = gv_rent_scaler.inverse_transform(prediction.cpu().numpy().reshape(-1, 1)).flatten()
-    target_test_np = gv_rent_scaler.inverse_transform(target_test.cpu().numpy().reshape(-1, 1)).flatten()
+    prediction_np = gv_rent_scaler.inverse_transform(prediction.cpu().numpy()).flatten()
+    target_test_np = gv_rent_scaler.inverse_transform(target_test.cpu().numpy()).flatten()
 
     residual = prediction_np - target_test_np
+
+    # Calculate MAPE
+    mape = (abs(residual) / target_test_np).mean() * 100
+    print("Mean Absolute Percentage Error:", mape)
+
+    # Calculate MAE
     mean_absolute_error = abs(residual).mean()
     print("Mean Absolute Error:", mean_absolute_error)
+
+    # Calculate RMSE
     rmse = (residual**2).mean() ** 0.5
     print("Root Mean Squared Error:", rmse)
 
